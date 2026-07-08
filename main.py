@@ -3,25 +3,13 @@ import os, numpy as np, time, threading, queue, logging, json, sys
 from collections import deque
 from audio_stream import AudioStream
 from feature_extraction import FeatureExtractor
+from config import RAAGA_DATABASE
 
 SAMPLE_RATE, CHUNK_SIZE, ROLLING_WINDOW_SECONDS, DECAY_FACTOR, HISTOGRAM_BINS, BINS_PER_SEMITONE = 22050, 2048, 45, 0.98, 120, 10
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
-def generate_idealized_histogram(active_semitones_weights):
-    hist = np.zeros(HISTOGRAM_BINS)
-    for semitone, weight in active_semitones_weights.items():
-        center_bin = semitone * BINS_PER_SEMITONE
-        for offset in [-2, -1, 0, 1, 2]:
-            bin_idx = (center_bin + offset) % HISTOGRAM_BINS
-            hist[bin_idx] += weight * np.exp(-(offset ** 2) / 2.0)
-    total = np.sum(hist)
-    return hist / total if total > 0 else hist
-
-RAGA_REGISTRY = {
-    "Yaman": {"vadi": "Ga (Gandhar)", "samvadi": "Ni (Nishad)", "pakad": "Ni_lower -> Re -> Ga -> Re -> Sa | Pa -> Ma_Teevra -> Ga -> Re -> Sa", "histogram": generate_idealized_histogram({0: 0.12, 2: 0.14, 4: 0.25, 6: 0.15, 7: 0.12, 9: 0.10, 11: 0.20})},
-    "Bhupali": {"vadi": "Ga (Gandhar)", "samvadi": "Dha (Dhaivat)", "pakad": "Ga -> Re -> Sa -> Dha_lower -> Sa -> Re -> Ga | Pa -> Ga -> Re -> Sa", "histogram": generate_idealized_histogram({0: 0.15, 2: 0.15, 4: 0.30, 7: 0.15, 9: 0.25})}
-}
+RAGA_REGISTRY = {name: RAAGA_DATABASE[name] for name in ("Yaman", "Bhupali")}
 
 class RaagaClassifier:
     def __init__(self, database): self.database, self.was_locked = database, False
@@ -88,10 +76,10 @@ def main():
         if hasattr(streamer, "stream") and streamer.stream:
             try: streamer.stream.stop_stream(); streamer.stream.close()
             except: pass
-        meta = RAGA_REGISTRY.get(raga_out, {"vadi": "Unknown", "samvadi": "Unknown", "pakad": "Unknown"})
+        meta = RAGA_REGISTRY.get(raga_out, {"vadi": "Unknown", "samvadi": "Unknown", "pakad": []})
         os.system("clear")
         print(f"\n============================================================\n ⏱️  120-SECOND PERFORMANCE WINDOW CONCLUDED SUCCESSFULLY\n============================================================\n CONCURRENT DETECTED RAAGA : {raga_out}\n------------------------------------------------------------\n FINAL STRUCTURAL MATRIX (JSON FORMAT):")
-        print(json.dumps({"session_metadata": {"execution_duration_seconds": 120.0, "input_tonic_sa_hz": f_tonic, "sample_rate_hz": SAMPLE_RATE}, "classification_results": {"detected_dominant_raga": raga_out, "confidence_scores": {k: round(float(v), 4) for k, v in s_out.items()}}, "musicological_ground_truth": {"raga_name": raga_out, "vadi_king_note": meta["vadi"], "samvadi_queen_note": meta["samvadi"], "pakad_signature_phrase": meta["pakad"]}}, indent=2))
+        print(json.dumps({"session_metadata": {"execution_duration_seconds": 120.0, "input_tonic_sa_hz": f_tonic, "sample_rate_hz": SAMPLE_RATE}, "classification_results": {"detected_dominant_raga": raga_out, "confidence_scores": {k: round(float(v), 4) for k, v in s_out.items()}}, "musicological_ground_truth": {"raga_name": raga_out, "vadi_king_note": meta["vadi"], "samvadi_queen_note": meta["samvadi"], "pakad_signature_phrase": " -> ".join(meta["pakad"])}}, indent=2))
         print("============================================================\nPipeline closed cleanly.\n")
 
 if __name__ == "__main__": main()

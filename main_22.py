@@ -21,43 +21,35 @@ from config import (
     HISTOGRAM_BINS,
     BINS_PER_SEMITONE,
     ROLLING_WINDOW_SECONDS,
-    DECAY_FACTOR
+    DECAY_FACTOR,
+    SWARA_MAPPING,
+    RAAGA_DATABASE
 )
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
-# Standard upper-case swara index variables
+# Standard upper-case swara index variables (same fixed order as config.SWARA_MAPPING)
 SA, RE_K, RE, GA_K, GA, MA, MA_T, PA, DHA_K, DHA, NI_K, NI = range(12)
 SWARA_NAMES = ['Sa', 'Re_K', 'Re', 'Ga_K', 'Ga', 'Ma', 'Ma_T', 'Pa', 'Dha_K', 'Dha', 'Ni_K', 'Ni']
 
-def generate_idealized_histogram(w):
-    h = np.zeros(HISTOGRAM_BINS)
-    for s, wt in w.items():
-        for o in [-2, -1, 0, 1, 2]:
-            h[(s * BINS_PER_SEMITONE + o) % HISTOGRAM_BINS] += wt * np.exp(-(o**2)/2.0)
-    return h / np.sum(h) if np.sum(h) > 0 else h
-
-RAGA_REGISTRY = {
-    "Yaman": {"vadi": "Ga", "samvadi": "Ni", "pakad": "Ni->Re->Ga", "forbidden": [RE_K, GA_K, MA, DHA_K, NI_K], "histogram": generate_idealized_histogram({SA: 0.12, RE: 0.14, GA: 0.25, MA_T: 0.15, PA: 0.12, DHA: 0.10, NI: 0.20})},
-    "Bhupali": {"vadi": "Ga", "samvadi": "Dha", "pakad": "Ga->Re->Sa", "forbidden": [RE_K, GA_K, MA, MA_T, DHA_K, NI_K, NI], "histogram": generate_idealized_histogram({SA: 0.15, RE: 0.15, GA: 0.30, PA: 0.15, DHA: 0.25})},
-    "Bhairav": {"vadi": "Komal Re", "samvadi": "Komal Dha", "pakad": "Ma->Dha_K", "forbidden": [RE, GA_K, MA_T, DHA, NI_K], "histogram": generate_idealized_histogram({SA: 0.12, RE_K: 0.25, GA: 0.12, MA: 0.12, PA: 0.12, DHA_K: 0.20, NI: 0.07})},
-    "Asavari": {"vadi": "Komal Dha", "samvadi": "Komal Ga", "pakad": "Ma->Pa->Dha_K", "forbidden": [RE_K, GA, MA_T, DHA, NI], "histogram": generate_idealized_histogram({SA: 0.12, RE: 0.14, GA_K: 0.20, MA: 0.12, PA: 0.14, DHA_K: 0.25, NI_K: 0.03})},
-    "Jaunpuri": {"vadi": "Komal Dha", "samvadi": "Komal Ga", "pakad": "Dha_K->Ni_K", "forbidden": [RE_K, GA, MA_T, DHA, NI], "histogram": generate_idealized_histogram({SA: 0.12, RE: 0.14, GA_K: 0.20, MA: 0.12, PA: 0.14, DHA_K: 0.22, NI_K: 0.06})},
-    "Marwa": {"vadi": "Komal Re", "samvadi": "Dha", "pakad": "Dha_lower -> Re_K -> Ga -> Sa", "forbidden": [RE, GA_K, MA, PA, NI_K], "histogram": generate_idealized_histogram({SA: 0.05, RE_K: 0.35, GA: 0.15, MA_T: 0.15, DHA: 0.25, NI: 0.05})},
-    "Puriya": {"vadi": "Ni", "samvadi": "Ga", "pakad": "Ni_lower -> Re_K -> Ga -> Ma_T", "forbidden": [RE, GA_K, MA, PA, NI_K], "histogram": generate_idealized_histogram({SA: 0.05, RE_K: 0.15, GA: 0.25, MA_T: 0.15, DHA: 0.10, NI: 0.30})}
-}
+RAGA_REGISTRY = RAAGA_DATABASE
 
 RAGA_SYNONYMS = {"marva": "Marwa", "bhoop": "Bhupali", "bhoopali": "Bhupali", "bhairv": "Bhairav"}
 
 class RaagaClassifier:
-    def __init__(self, db): self.db = db
+    def __init__(self, db):
+        self.db = db
+        self.forbidden_indices = {
+            name: [SWARA_MAPPING[n] for n in entry["forbidden_notes"]]
+            for name, entry in db.items()
+        }
     def classify(self, hist):
         cl = hist.copy(); cl[cl < 0.05] = 0.0
         scores = {}
         for name, entry in self.db.items():
             penalty = 1.0
-            if any(np.sum(cl[i*BINS_PER_SEMITONE:(i+1)*BINS_PER_SEMITONE]) > 0.04 for i in entry["forbidden"]):
+            if any(np.sum(cl[i*BINS_PER_SEMITONE:(i+1)*BINS_PER_SEMITONE]) > 0.04 for i in self.forbidden_indices[name]):
                 penalty = 0.15
             ref = entry["histogram"]
             num, n1, n2 = np.dot(cl, ref), np.linalg.norm(cl), np.linalg.norm(ref)
@@ -162,11 +154,11 @@ def main():
             except:
                 pass
         time.sleep(0.2)
-        meta = RAGA_REGISTRY.get(raga_out, {"vadi": "Unknown", "samvadi": "Unknown", "pakad": "Unknown"})
+        meta = RAGA_REGISTRY.get(raga_out, {"vadi": "Unknown", "samvadi": "Unknown", "pakad": []})
         is_match = "PASSED ✅" if raga_out.lower() == intended_raga.lower() else "FAILED ❌"
         os.system("clear")
         print(f"\n============================================================\n CONCURRENT DETECTED RAAGA : {raga_out}\n VALIDATION LAB STATUS      : {is_match}\n------------------------------------------------------------")
-        print(json.dumps({"session_metadata": {"execution_duration_seconds": 120.0, "input_tonic_sa_hz": f_tonic}, "classification_results": {"detected_dominant_raga": raga_out, "validation_status": is_match}, "musicological_ground_truth": {"raga_name": raga_out, "vadi_king_note": meta["vadi"], "samvadi_queen_note": meta["samvadi"], "pakad_signature_phrase": meta["pakad"]}}, indent=2))
+        print(json.dumps({"session_metadata": {"execution_duration_seconds": 120.0, "input_tonic_sa_hz": f_tonic}, "classification_results": {"detected_dominant_raga": raga_out, "validation_status": is_match}, "musicological_ground_truth": {"raga_name": raga_out, "vadi_king_note": meta["vadi"], "samvadi_queen_note": meta["samvadi"], "pakad_signature_phrase": " -> ".join(meta["pakad"])}}, indent=2))
 
 if __name__ == "__main__":
     main()

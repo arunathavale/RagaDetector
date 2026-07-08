@@ -174,7 +174,7 @@ RAAGA_DATABASE = {
         'avroha': ['Sa', 'Dha_shuddha', 'Pa', 'Ga_shuddha', 'Re_shuddha', 'Sa'],
         'vadi': 'Ga_shuddha',
         'samvadi': 'Dha_shuddha',
-        'pakad': ['Ga_shuddha', 'Pa', 'Dha_shuddha', 'Sa', 'Dha_shuddha', 'Pa', 'Ga_shuddha', 
+        'pakad': ['Ga_shuddha', 'Pa', 'Dha_shuddha', 'Sa', 'Dha_shuddha', 'Pa', 'Ga_shuddha',
                   'Re_shuddha', 'Sa'],
         'prahar': 'evening (first quarter)',
         'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_shuddha', 'Pa', 'Dha_shuddha']),
@@ -184,6 +184,105 @@ RAAGA_DATABASE = {
             ['Ga_shuddha', 'Pa', 'Dha_shuddha', 'Sa'],
             ['Dha_shuddha', 'Pa', 'Ga_shuddha', 'Re_shuddha', 'Sa'],
             ['Sa', 'Re_shuddha', 'Ga_shuddha', 'Pa', 'Dha_shuddha', 'Sa']
+        ]
+    },
+
+    'Bhairav': {
+        'that': 'Bhairav',
+        'aroha': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_shuddha', 'Sa'],
+        'avroha': ['Sa', 'Ni_shuddha', 'Dha_komal', 'Pa', 'Ma_shuddha', 'Ga_shuddha', 'Re_komal', 'Sa'],
+        'vadi': 'Re_komal',
+        'samvadi': 'Dha_komal',
+        'pakad': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Pa',
+                  'Ma_shuddha', 'Ga_shuddha', 'Re_komal', 'Sa'],
+        'prahar': 'morning (dawn)',
+        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa',
+                                              'Dha_komal', 'Ni_shuddha']),
+        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_tivra', 'Dha_shuddha', 'Ni_komal'],
+        'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_shuddha'],
+        'characteristic_phrases': [
+            ['Re_komal', 'Ga_shuddha', 'Ma_shuddha'],
+            ['Ma_shuddha', 'Pa', 'Dha_komal'],
+            ['Dha_komal', 'Pa', 'Ma_shuddha', 'Ga_shuddha', 'Re_komal', 'Sa']
+        ]
+    },
+
+    'Asavari': {
+        'that': 'Asavari',
+        'aroha': ['Sa', 'Re_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Sa'],
+        'avroha': ['Sa', 'Ni_komal', 'Dha_komal', 'Pa', 'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
+        'vadi': 'Dha_komal',
+        'samvadi': 'Ga_komal',
+        'pakad': ['Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal', 'Dha_komal', 'Pa',
+                  'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
+        'prahar': 'afternoon (second quarter)',
+        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa',
+                                              'Dha_komal', 'Ni_komal']),
+        'forbidden_notes': ['Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
+        'required_notes': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal'],
+        'characteristic_phrases': [
+            ['Ma_shuddha', 'Pa', 'Dha_komal'],
+            ['Dha_komal', 'Ni_komal', 'Dha_komal', 'Pa'],
+            ['Pa', 'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa']
+        ]
+    },
+
+    'Jaunpuri': {
+        'that': 'Asavari',
+        'aroha': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Sa'],
+        'avroha': ['Sa', 'Ni_komal', 'Dha_komal', 'Pa', 'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
+        'vadi': 'Dha_komal',
+        'samvadi': 'Ga_komal',
+        'pakad': ['Dha_komal', 'Ni_komal', 'Sa', 'Re_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
+        'prahar': 'afternoon (second quarter)',
+        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa',
+                                              'Dha_komal', 'Ni_komal']),
+        'forbidden_notes': ['Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
+        'required_notes': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal'],
+        'characteristic_phrases': [
+            ['Dha_komal', 'Ni_komal', 'Sa'],
+            ['Sa', 'Re_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
+            ['Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal']
+        ]
+    },
+
+    'Marwa': {
+        'that': 'Marwa',
+        'aroha': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
+        'avroha': ['Sa', 'Ni_shuddha', 'Dha_shuddha', 'Ma_tivra', 'Ga_shuddha', 'Re_komal', 'Sa'],
+        'vadi': 'Re_komal',
+        'samvadi': 'Dha_shuddha',
+        'pakad': ['Dha_shuddha', 'Re_komal', 'Ga_shuddha', 'Sa'],
+        'prahar': 'evening (sunset)',
+        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra',
+                                              'Dha_shuddha', 'Ni_shuddha']),  # Pa is deliberately absent
+        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],
+        'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
+        'characteristic_phrases': [
+            ['Re_komal', 'Ga_shuddha', 'Ma_tivra'],
+            ['Ma_tivra', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
+            ['Dha_shuddha', 'Ma_tivra', 'Ga_shuddha', 'Re_komal']
+        ]
+    },
+
+    'Puriya': {
+        'that': 'Marwa',
+        # Puriya's aroha traditionally opens on the lower-octave Ni; this schema does not
+        # track octave, so it is represented here using the same Ni_shuddha swara identity.
+        'aroha': ['Ni_shuddha', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
+        'avroha': ['Sa', 'Ni_shuddha', 'Dha_shuddha', 'Ma_tivra', 'Ga_shuddha', 'Re_komal', 'Ni_shuddha', 'Sa'],
+        'vadi': 'Ni_shuddha',
+        'samvadi': 'Ga_shuddha',
+        'pakad': ['Ni_shuddha', 'Re_komal', 'Ga_shuddha', 'Ma_tivra'],
+        'prahar': 'evening (sunset)',
+        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra',
+                                              'Dha_shuddha', 'Ni_shuddha']),  # Pa is deliberately absent
+        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],
+        'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
+        'characteristic_phrases': [
+            ['Ni_shuddha', 'Re_komal', 'Ga_shuddha'],
+            ['Ga_shuddha', 'Ma_tivra', 'Dha_shuddha'],
+            ['Dha_shuddha', 'Ma_tivra', 'Ga_shuddha', 'Re_komal']
         ]
     }
 }
