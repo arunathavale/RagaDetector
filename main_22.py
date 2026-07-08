@@ -22,7 +22,6 @@ from config import (
     BINS_PER_SEMITONE,
     ROLLING_WINDOW_SECONDS,
     DECAY_FACTOR,
-    SWARA_MAPPING,
     RAAGA_DATABASE
 )
 
@@ -40,21 +39,14 @@ RAGA_SYNONYMS = {"marva": "Marwa", "bhoop": "Bhupali", "bhoopali": "Bhupali", "b
 class RaagaClassifier:
     def __init__(self, db):
         self.db = db
-        self.forbidden_indices = {
-            name: [SWARA_MAPPING[n] for n in entry["forbidden_notes"]]
-            for name, entry in db.items()
-        }
     def classify(self, hist):
         cl = hist.copy(); cl[cl < 0.05] = 0.0
         scores = {}
         for name, entry in self.db.items():
-            penalty = 1.0
-            if any(np.sum(cl[i*BINS_PER_SEMITONE:(i+1)*BINS_PER_SEMITONE]) > 0.04 for i in self.forbidden_indices[name]):
-                penalty = 0.15
             ref = entry["histogram"]
             num, n1, n2 = np.dot(cl, ref), np.linalg.norm(cl), np.linalg.norm(ref)
             sim = (num / (n1 * n2)) if (n1 > 0 and n2 > 0) else 0.0
-            scores[name] = max(0.0, min(1.0, sim * penalty))
+            scores[name] = max(0.0, min(1.0, sim))
         mn, mx = min(scores.values()), max(scores.values())
         return {k: ((v - mn) / (mx - mn) if mx > mn else 1.0/len(scores)) for k, v in scores.items()}
 

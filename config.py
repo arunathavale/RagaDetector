@@ -73,29 +73,51 @@ def semitone_to_bin(semitone_index):
     return start_bin, end_bin
 
 
-def create_swara_histogram(swara_list):
+def compute_swara_weights(aroha, avroha, pakad, vadi=None, samvadi=None,
+                           vadi_boost=1.5, samvadi_boost=1.25):
     """
-    Create a 120-bin histogram from a list of swaras.
-    
+    Weight each swara by how often it occurs across aroha/avroha/pakad, with
+    extra emphasis on the vadi (king) and samvadi (queen) notes. Ragas that
+    share the same note set (e.g. Jaunpuri/Asavari, Marwa/Puriya) still get
+    distinct histograms this way, since they differ in melodic emphasis even
+    when the underlying note set is identical.
+
+    Returns:
+        Dict mapping swara name -> relative weight (not yet normalized)
+    """
+    weights = {}
+    for swara in aroha + avroha + pakad:
+        weights[swara] = weights.get(swara, 0) + 1
+    if vadi in weights:
+        weights[vadi] *= vadi_boost
+    if samvadi in weights:
+        weights[samvadi] *= samvadi_boost
+    return weights
+
+
+def create_weighted_swara_histogram(swara_weights):
+    """
+    Create a 120-bin histogram from a dict of swara -> weight.
+
     Args:
-        swara_list: List of swara names (e.g., ['Sa', 'Re_shuddha', 'Ga_shuddha'])
-    
+        swara_weights: Dict mapping swara name to relative weight
+                       (e.g., {'Sa': 5, 'Re_shuddha': 3})
+
     Returns:
         numpy array of shape (120,) with normalized histogram values
     """
     histogram = np.zeros(HISTOGRAM_BINS)
-    
-    for swara in swara_list:
+
+    for swara, weight in swara_weights.items():
         if swara in SWARA_MAPPING:
             semitone_idx = SWARA_MAPPING[swara]
             start_bin, end_bin = semitone_to_bin(semitone_idx)
-            # Distribute weight across the bins for this semitone
-            histogram[start_bin:end_bin] = 1.0
-    
+            histogram[start_bin:end_bin] = weight
+
     # Normalize histogram
     if np.sum(histogram) > 0:
         histogram = histogram / np.sum(histogram)
-    
+
     return histogram
 
 
@@ -157,8 +179,6 @@ RAAGA_DATABASE = {
         'pakad': ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha', 'Re_shuddha', 'Sa', 'Pa', 'Ma_tivra', 
                   'Ga_shuddha', 'Re_shuddha', 'Sa'],
         'prahar': 'evening (first quarter)',
-        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_shuddha', 'Ma_tivra', 
-                                              'Pa', 'Dha_shuddha', 'Ni_shuddha']),
         'forbidden_notes': [],  # Yaman uses all 7 notes, no forbidden notes
         'required_notes': ['Sa', 'Re_shuddha', 'Ga_shuddha', 'Ma_tivra', 'Pa', 'Dha_shuddha', 'Ni_shuddha'],  # All 7 notes expected
         'characteristic_phrases': [
@@ -177,7 +197,6 @@ RAAGA_DATABASE = {
         'pakad': ['Ga_shuddha', 'Pa', 'Dha_shuddha', 'Sa', 'Dha_shuddha', 'Pa', 'Ga_shuddha',
                   'Re_shuddha', 'Sa'],
         'prahar': 'evening (first quarter)',
-        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_shuddha', 'Pa', 'Dha_shuddha']),
         'forbidden_notes': ['Ma_tivra', 'Ni_shuddha'],  # Bhupali is pentatonic, forbids Ma (tivra) and Ni
         'required_notes': ['Sa', 'Re_shuddha', 'Ga_shuddha', 'Pa', 'Dha_shuddha'],  # Only 5 notes expected
         'characteristic_phrases': [
@@ -196,8 +215,6 @@ RAAGA_DATABASE = {
         'pakad': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Pa',
                   'Ma_shuddha', 'Ga_shuddha', 'Re_komal', 'Sa'],
         'prahar': 'morning (dawn)',
-        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa',
-                                              'Dha_komal', 'Ni_shuddha']),
         'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_tivra', 'Dha_shuddha', 'Ni_komal'],
         'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_shuddha'],
         'characteristic_phrases': [
@@ -216,8 +233,6 @@ RAAGA_DATABASE = {
         'pakad': ['Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal', 'Dha_komal', 'Pa',
                   'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
         'prahar': 'afternoon (second quarter)',
-        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa',
-                                              'Dha_komal', 'Ni_komal']),
         'forbidden_notes': ['Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
         'required_notes': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal'],
         'characteristic_phrases': [
@@ -235,8 +250,6 @@ RAAGA_DATABASE = {
         'samvadi': 'Ga_komal',
         'pakad': ['Dha_komal', 'Ni_komal', 'Sa', 'Re_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
         'prahar': 'afternoon (second quarter)',
-        'histogram': create_swara_histogram(['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa',
-                                              'Dha_komal', 'Ni_komal']),
         'forbidden_notes': ['Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
         'required_notes': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal'],
         'characteristic_phrases': [
@@ -254,9 +267,7 @@ RAAGA_DATABASE = {
         'samvadi': 'Dha_shuddha',
         'pakad': ['Dha_shuddha', 'Re_komal', 'Ga_shuddha', 'Sa'],
         'prahar': 'evening (sunset)',
-        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra',
-                                              'Dha_shuddha', 'Ni_shuddha']),  # Pa is deliberately absent
-        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],
+        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],  # Pa is deliberately absent
         'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
         'characteristic_phrases': [
             ['Re_komal', 'Ga_shuddha', 'Ma_tivra'],
@@ -275,9 +286,7 @@ RAAGA_DATABASE = {
         'samvadi': 'Ga_shuddha',
         'pakad': ['Ni_shuddha', 'Re_komal', 'Ga_shuddha', 'Ma_tivra'],
         'prahar': 'evening (sunset)',
-        'histogram': create_swara_histogram(['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra',
-                                              'Dha_shuddha', 'Ni_shuddha']),  # Pa is deliberately absent
-        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],
+        'forbidden_notes': ['Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Ni_komal'],  # Pa is deliberately absent
         'required_notes': ['Sa', 'Re_komal', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha'],
         'characteristic_phrases': [
             ['Ni_shuddha', 'Re_komal', 'Ga_shuddha'],
@@ -286,6 +295,16 @@ RAAGA_DATABASE = {
         ]
     }
 }
+
+# Populate each raga's histogram from its own aroha/avroha/pakad/vadi/samvadi,
+# so ragas sharing a note set (e.g. Jaunpuri/Asavari, Marwa/Puriya) still get
+# distinct reference histograms based on melodic emphasis.
+for _raaga_data in RAAGA_DATABASE.values():
+    _weights = compute_swara_weights(
+        _raaga_data['aroha'], _raaga_data['avroha'], _raaga_data['pakad'],
+        vadi=_raaga_data['vadi'], samvadi=_raaga_data['samvadi']
+    )
+    _raaga_data['histogram'] = create_weighted_swara_histogram(_weights)
 
 
 # =============================================================================
