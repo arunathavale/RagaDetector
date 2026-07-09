@@ -4,16 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A CPU-only, real-time Hindustani classical Raaga (raga) identifier. It captures live microphone audio, extracts pitch, converts it to a tonic-relative 120-bin pitch-class histogram, and compares that histogram against reference Raaga templates via cosine similarity to guess which Raaga is being performed.
+A CPU-only Hindustani classical Raaga (raga) identifier that works from either live microphone audio or a dropped-in audio file. It extracts pitch, converts it to a tonic-relative 120-bin pitch-class histogram, and compares that histogram against reference Raaga templates via cosine similarity to guess which Raaga is being performed.
 
 ## Running
 
 ```bash
 pip install -r requirements.txt
-python3 main_22.py    # 7-raga "studio" mode: asks which raga you intend to sing, tracks a live 12-swara spectrum vs. the target, prints a PASS/FAIL validation at the end
+python3 main_22.py    # 7-raga "studio" mode: asks which raga you intend to sing, tracks a 12-swara spectrum vs. the target, prints a PASS/FAIL validation at the end
 ```
 
-`main_22.py` is the sole entry point (the old 2-raga `main.py` was retired in Phase 4 — see `PROJECT_PLAN.md`). It runs for a fixed 120-second window, redraws a terminal dashboard once per second, and prints a JSON summary on exit.
+`main_22.py` is the sole entry point (the old 2-raga `main.py` was retired in Phase 4 — see `PROJECT_PLAN.md`). It prompts for:
+1. The raga you intend to perform (for the PASS/FAIL comparison).
+2. An audio file path, or Enter for live mic.
+3. A tonic (Sa) frequency in Hz, or Enter to auto-detect from ~5 seconds of audio (`FeatureExtractor.auto_detect_tonic()`, median method) — in file mode this treats the *opening* 5 seconds as a calibration reference (e.g. a held Sa) and excludes it from the classification histogram, not just from detection; in live mode you're prompted to sing/hum Sa for 5 seconds before the main window starts.
+
+Live mic mode runs for a fixed 120-second window, redraws a terminal dashboard once per second, and prints a JSON summary on exit. File mode processes the whole file once and prints a one-shot summary plus the same JSON block — no artificial 120s cap, since a file already has a finite, known length.
+
+Auto-detected tonic is only as accurate as the underlying autocorrelation pitch detector's precision (median method) — in testing it landed within ~30 cents of the true tonic on a clean synthetic tone, which was enough on its own to occasionally push a borderline case toward an adjacent raga. This is a known precision ceiling of the existing algorithm, not something this wiring changed; a manually-entered tonic is more reliable when accuracy matters.
 
 Module self-tests (no test framework/pytest is set up in this repo):
 ```bash
@@ -32,7 +39,7 @@ Note: `requirements.txt` is unpinned to Python 3.8-era versions (numpy 1.21, lib
 
 `audio_stream.AudioStream` (PyAudio callback thread) → raw float32 chunks pushed into a `deque(maxlen=100)` → consumer pulls chunks → `feature_extraction.FeatureExtractor` does autocorrelation pitch detection → converts Hz to cents relative to a fixed tonic (`1200 * log2(f/f_tonic)`) → wraps to a single octave (0–1200 cents) → bins into one of 120 histogram bins (10 bins/semitone, for shruti-level resolution) → a rolling `deque` of recent frame-histograms is averaged into a "current" histogram → `RaagaClassifier.classify()` does plain cosine similarity against per-Raaga reference histograms → scores are min-max normalized and the argmax is the detected Raaga.
 
-Tonic (Sa) is **not auto-detected** — `main_22.py` prompts the user for the tonic frequency in Hz at startup and passes it straight into `FeatureExtractor(tonic_frequency=...)`. `FeatureExtractor.auto_detect_tonic()` exists but is unused (Phase 5 in `PROJECT_PLAN.md`).
+Tonic (Sa) can be typed in manually or auto-detected (Phase 5, see `PROJECT_PLAN.md`) — `main_22.py` prompts for a Hz value and, if left blank, calls `FeatureExtractor.auto_detect_tonic()` against a calibration window of audio before switching to `extractor.set_tonic()` for the actual performance.
 
 ### One Raaga database, one entry point
 
