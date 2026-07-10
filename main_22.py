@@ -45,7 +45,7 @@ TONIC_DETECTION_SECONDS = 5.0
 FALLBACK_TONIC_HZ = 145.0
 TYPICAL_TONIC_RANGE_HZ = (100.0, 500.0)  # soft plausibility check, not a hard bound
 RECORDINGS_DIR = "recordings"
-SESSION_DURATION_SECONDS = 300.0  # 5 min - a 120s window risked landing mostly in
+SESSION_DURATION_SECONDS = 240.0  # 4 min - a 120s window risked landing mostly in
 # the alap (the slow, exploratory opening) before a performance settles into a
 # fuller range of characteristic phrases
 
