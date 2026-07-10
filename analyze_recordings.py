@@ -2,13 +2,17 @@
 """
 Re-analyze every saved recording under recordings/ through the new two-phase
 live-mode pipeline (see run_live_mode() in main_22.py): the first
-LIVE_TONIC_WINDOW_SECONDS worth of audio content decides the tonic via
-drone-interval priors (raga-agnostic - doesn't know or use the raga label),
-then ALL of the recording's pitches (tonic window included, matching
-run_live_mode()'s behavior of folding Phase 1 into the final histogram) are
-classified and scored against the raga named in the filename - used purely
-as an after-the-fact label for tabulation, never fed into tonic or raga
-detection.
+LIVE_TONIC_WINDOW_SECONDS worth of audio content decides the tonic by running
+continuous pyin over that window and scoring candidates via drone-interval
+priors (raga-agnostic - doesn't know or use the raga label; see
+continuous_pyin_pitches()'s docstring for why pyin specifically, found via
+compare_tonic_methods.py to beat plain per-chunk autocorrelation by ~35% on
+average against a classifier-validated reference), then ALL of the
+recording's pitches (tonic window included, matching run_live_mode()'s
+behavior of folding Phase 1 into the final histogram - via the per-chunk
+autocorrelation method, same as live swara tracking, NOT pyin) are classified
+and scored against the raga named in the filename - used purely as an
+after-the-fact label for tabulation, never fed into tonic or raga detection.
 
 Note: save_recording() only keeps non-silent chunks, so a saved file has no
 timestamps - "first 2 minutes" here means the first 2 minutes' worth of audio
@@ -22,7 +26,7 @@ import numpy as np
 
 from main_22 import (
     load_file_chunks, FeatureExtractor, RaagaClassifier, RAGA_REGISTRY,
-    determine_tonic_from_pitches, pitch_to_frame_histogram,
+    determine_tonic_from_pitches, continuous_pyin_pitches, pitch_to_frame_histogram,
     compute_swara_deviation_report,
     SAMPLE_RATE, BUFFER_SIZE, LIVE_TONIC_WINDOW_SECONDS, RECORDINGS_DIR,
 )
@@ -50,11 +54,16 @@ def analyze_one(filepath, extractor, classifier):
     tonic_chunks = chunks[:n_tonic_chunks]
     remaining_chunks = chunks[n_tonic_chunks:]
 
-    tonic_pitches = []
+    autocorr_pitches = []
     for c in tonic_chunks:
         p = extractor.extract_pitch(c)
         if p and not np.isnan(p):
-            tonic_pitches.append(p)
+            autocorr_pitches.append(p)
+
+    phase1_audio = np.concatenate(tonic_chunks).astype(np.float32) if tonic_chunks else np.array([])
+    tonic_pitches = continuous_pyin_pitches(phase1_audio)
+    if not tonic_pitches:
+        tonic_pitches = autocorr_pitches  # pyin found nothing - fall back, matching run_live_mode()
 
     f_tonic, sa_s, ma_s, pa_s = determine_tonic_from_pitches(tonic_pitches)
     if f_tonic is None:
@@ -69,7 +78,7 @@ def analyze_one(filepath, extractor, classifier):
         if p and not np.isnan(p):
             remaining_pitches.append(p)
 
-    all_pitches = tonic_pitches + remaining_pitches
+    all_pitches = autocorr_pitches + remaining_pitches
     frames = []
     for p in all_pitches:
         fh = pitch_to_frame_histogram(extractor, p)

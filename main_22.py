@@ -24,7 +24,9 @@ from config import (
     BINS_PER_SEMITONE,
     ROLLING_WINDOW_SECONDS,
     SWARA_MAPPING,
-    RAAGA_DATABASE
+    RAAGA_DATABASE,
+    MIN_FREQUENCY,
+    MAX_FREQUENCY,
 )
 
 logging.basicConfig(level=logging.ERROR)
@@ -332,6 +334,32 @@ DRONE_FOURTH_SEMITONE = 5   # Ma_shuddha - Sa-Ma drone dyad
 DRONE_FIFTH_SEMITONE = 7    # Pa - Sa-Pa drone dyad, more common Hindustani tuning
 DRONE_FOURTH_WEIGHT = 0.5
 DRONE_FIFTH_WEIGHT = 0.8
+STABILITY_FILTER_CENTS = 25.0  # see filter_stable_pitches()
+
+def filter_stable_pitches(pitches, stability_threshold_cents=STABILITY_FILTER_CENTS):
+    """Keep only pitches that sit within stability_threshold_cents of BOTH
+    immediate neighbors in the detection sequence - i.e. part of a sustained,
+    non-gliding run, not a single noisy blip or a note in the middle of a
+    transition. A tanpura drone is steady by definition; a sung phrase glides
+    continuously between notes. Raw pitch mass (what determine_tonic_from_pitches()
+    uses by default) counts a drone frame and a mid-glide frame identically, so
+    it's really measuring wherever the voice spends the most raw time, not
+    necessarily the drone - this is a sharper filter for "this frame plausibly
+    reflects a held tone" than mass alone.
+
+    Sequence order matters here and is assumed to already be capture order (the
+    order pitches were appended to the list as chunks arrived), not sorted by
+    value - the same assumption print_tonic_stability_check() makes about its
+    input."""
+    if len(pitches) < 3:
+        return list(pitches)
+    stable = []
+    for i in range(1, len(pitches) - 1):
+        prev_cents = abs(1200.0 * np.log2(pitches[i] / pitches[i - 1]))
+        next_cents = abs(1200.0 * np.log2(pitches[i + 1] / pitches[i]))
+        if prev_cents <= stability_threshold_cents and next_cents <= stability_threshold_cents:
+            stable.append(pitches[i])
+    return stable
 
 def determine_tonic_from_pitches(pitches, search_min_hz=TYPICAL_TONIC_RANGE_HZ[0],
                                   search_max_hz=TYPICAL_TONIC_RANGE_HZ[1]):
@@ -392,6 +420,33 @@ def determine_tonic_from_pitches(pitches, search_min_hz=TYPICAL_TONIC_RANGE_HZ[0
         hz *= 2
     return (best_tonic,) + best_components
 
+PYIN_HOP_LENGTH = 441  # ~10ms at 44100Hz
+
+def continuous_pyin_pitches(raw_audio, sample_rate=SAMPLE_RATE, hop_length=PYIN_HOP_LENGTH,
+                             voiced_prob_threshold=0.5):
+    """Run librosa.pyin() once, continuously, across a whole audio buffer with a
+    proper ~10ms hop - not per-BUFFER_SIZE-chunk like the default autocorrelation
+    detector, since pyin's Viterbi decoding needs real temporal context to work as
+    designed. Used ONLY for the Phase 1 tonic calculation in run_live_mode(), not
+    for live swara tracking - pyin was ruled out there earlier this session for
+    being source-agnostic (confident about any stable pitch, not specifically the
+    voice), but that same property turns out to be an asset for finding a tanpura
+    drone specifically. Compared against plain per-chunk autocorrelation and
+    against drone-prior search restricted to locally-stable frames only
+    (filter_stable_pitches()) on all 10 saved recordings: continuous pyin gave the
+    closest tonic to a classifier-validated reference on average (~35% closer than
+    the raw per-chunk method), clearly ahead of every other method tried. See
+    compare_tonic_methods.py and PROJECT_PLAN.md's 2026-07-10 entries for the full
+    comparison - still far from solved (average error was still ~3 semitones
+    even with this best-available method), but a clear, measured improvement."""
+    if len(raw_audio) == 0:
+        return []
+    f0, voiced_flag, voiced_probs = librosa.pyin(
+        y=raw_audio, fmin=MIN_FREQUENCY, fmax=MAX_FREQUENCY, sr=sample_rate, hop_length=hop_length,
+    )
+    valid = voiced_flag & (voiced_probs >= voiced_prob_threshold) & np.isfinite(f0)
+    return list(f0[valid])
+
 def print_tonic_stability_check(pitches, f_tonic, n_segments=4):
     """Split Phase 1's pitches into n_segments equal, time-ordered chunks (the list
     is already in capture order) and independently drone-tonic each one. Tonic
@@ -429,7 +484,10 @@ def run_live_mode(extractor, classifier, intended_raga):
     # and calculate the tonic that best fits the already-known intended raga.
     print(f"\nListening for {int(LIVE_TONIC_WINDOW_SECONDS)}s to calculate your tonic from "
           f"actual singing (sing normally - no live display until this finishes)...")
-    raw_pitches = []
+    raw_pitches = []       # per-chunk autocorrelation - used for the swara/deviation
+    # content of Phase 1 (folded into history/full_session_frames below), NOT for
+    # tonic determination itself - see phase1_chunks/continuous_pyin_pitches() below.
+    phase1_chunks = []     # raw audio from Phase 1, for the pyin-based tonic search
     phase1_start = time.time()
     while time.time() - phase1_start < LIVE_TONIC_WINDOW_SECONDS:
         remaining = max(0, int(LIVE_TONIC_WINDOW_SECONDS - (time.time() - phase1_start)))
@@ -437,12 +495,20 @@ def run_live_mode(extractor, classifier, intended_raga):
         while len(streamer.audio_queue) > 0:
             c = streamer.audio_queue.popleft()
             recorded_chunks.append(c)
+            phase1_chunks.append(c)
             p = extractor.extract_pitch(c)
             if p and not np.isnan(p):
                 raw_pitches.append(p)
         time.sleep(0.1)
 
-    f_tonic, sa_s, ma_s, pa_s = determine_tonic_from_pitches(raw_pitches)
+    print(f"\nAnalyzing tonic (running pyin over the full {int(LIVE_TONIC_WINDOW_SECONDS)}s window)...")
+    phase1_audio = np.concatenate(phase1_chunks).astype(np.float32) if phase1_chunks else np.array([])
+    tonic_pitches = continuous_pyin_pitches(phase1_audio)
+    if not tonic_pitches:
+        tonic_pitches = raw_pitches  # pyin found nothing at all - fall back to the
+        # per-chunk autocorrelation pitches rather than declaring total failure
+
+    f_tonic, sa_s, ma_s, pa_s = determine_tonic_from_pitches(tonic_pitches)
     if f_tonic is None:
         f_tonic, tonic_source = FALLBACK_TONIC_HZ, 'fallback_accepted'
         print(f"\n🚫 No pitch could be detected in the first {int(LIVE_TONIC_WINDOW_SECONDS)}s - "
@@ -455,7 +521,7 @@ def run_live_mode(extractor, classifier, intended_raga):
         if not (lo <= f_tonic <= hi):
             print(f"⚠️  {f_tonic:.2f} Hz is outside the typical vocal tonic range ({lo:.0f}-{hi:.0f} Hz) - "
                   f"worth a second look if this session's results seem off.")
-        print_tonic_stability_check(raw_pitches, f_tonic)
+        print_tonic_stability_check(tonic_pitches, f_tonic)
 
     extractor.set_tonic(f_tonic)
 
