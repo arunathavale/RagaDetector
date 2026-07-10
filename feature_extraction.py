@@ -153,14 +153,14 @@ class FeatureExtractor:
         
         Args:
             audio_chunk: Audio samples as numpy array
-            method: Pitch detection method ('autocorrelation', 'librosa', 'yin')
-        
+            method: Pitch detection method ('autocorrelation', 'librosa', 'yin', 'pyin')
+
         Returns:
             Fundamental frequency in Hz, or None if detection fails
         """
         if len(audio_chunk) < 2:
             return None
-        
+
         try:
             if method == 'autocorrelation':
                 return self._pitch_autocorrelation(audio_chunk)
@@ -168,6 +168,8 @@ class FeatureExtractor:
                 return self._pitch_librosa(audio_chunk)
             elif method == 'yin':
                 return self._pitch_yin(audio_chunk)
+            elif method == 'pyin':
+                return self._pitch_pyin(audio_chunk)
             else:
                 raise ValueError(f"Unknown pitch detection method: {method}")
         
@@ -279,11 +281,48 @@ class FeatureExtractor:
             if pitch > 0 and np.isfinite(pitch):
                 return pitch
             return None
-        
+
         except Exception as e:
             logger.debug(f"YIN pitch detection failed: {e}")
             return None
-    
+
+    def _pitch_pyin(self, audio_chunk, voiced_prob_threshold=0.5):
+        """
+        Probabilistic YIN pitch detection. Unlike plain YIN (_pitch_yin above),
+        librosa.pyin returns a per-frame voiced/unvoiced flag and confidence
+        alongside each pitch estimate - frames it isn't confident are actually
+        pitched (silence, percussion, noise) can be filtered out instead of forced
+        into a pitch estimate regardless.
+
+        Args:
+            audio_chunk: Audio samples as numpy array
+            voiced_prob_threshold: Minimum voiced-frame confidence to accept (0-1)
+
+        Returns:
+            Fundamental frequency in Hz, or None if no confident voiced pitch found
+        """
+        try:
+            f0, voiced_flag, voiced_probs = librosa.pyin(
+                y=audio_chunk,
+                fmin=self.min_freq,
+                fmax=self.max_freq,
+                sr=self.sample_rate
+            )
+
+            valid = voiced_flag & (voiced_probs >= voiced_prob_threshold) & np.isfinite(f0)
+            if not np.any(valid):
+                return None
+
+            pitch = np.median(f0[valid])
+
+            if pitch > 0 and np.isfinite(pitch):
+                return pitch
+            return None
+
+        except Exception as e:
+            logger.debug(f"pYIN pitch detection failed: {e}")
+            return None
+
     def frequency_to_cents(self, frequency, tonic_frequency=None):
         """
         Convert frequency to cents relative to tonic.
