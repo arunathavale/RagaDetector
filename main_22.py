@@ -423,22 +423,27 @@ def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga):
         print("\n❌ ERROR: could not read any audio from the file.\n")
         sys.exit(1)
 
+    # Treat the opening TONIC_DETECTION_SECONDS as a calibration reference (e.g. a
+    # held Sa from save_recording()'s own capture flow), not performance content -
+    # folding it into the classification histogram would let it dominate and bias
+    # the result toward whatever bin it happens to land in. This trim is applied
+    # unconditionally, regardless of how the tonic itself is obtained below - manual
+    # tonic entry used to skip it, which meant re-analyzing one of our own saved
+    # recordings (a common, recommended workflow) with a manually-specified tonic
+    # gave a different, wrong result than auto-detect or find_optimal_tonic.py did
+    # on the exact same file and tonic.
+    detect_chunk_count = int(TONIC_DETECTION_SECONDS * SAMPLE_RATE / BUFFER_SIZE)
+    performance_chunks = chunks[detect_chunk_count:] or chunks
+
     manual_tonic = parse_tonic_input(tonic_input)
     if manual_tonic is not None:
         f_tonic, tonic_source = manual_tonic, 'manual'
-        performance_chunks = chunks
     else:
         if tonic_input:
             print(f"\n'{tonic_input}' isn't a number - auto-detecting tonic instead.")
-        # Treat the opening TONIC_DETECTION_SECONDS as a calibration reference (e.g. a
-        # held Sa), not performance content - folding it into the classification
-        # histogram would let it dominate and bias the result toward whatever bin it
-        # happens to land in.
-        detect_chunk_count = int(TONIC_DETECTION_SECONDS * SAMPLE_RATE / BUFFER_SIZE)
         detected_tonic, was_detected = detect_tonic(extractor, chunks[:detect_chunk_count])
         f_tonic, tonic_source = confirm_or_override_tonic(detected_tonic, was_detected)  # no retry:
         # re-reading the same opening slice of the file would just return the identical value
-        performance_chunks = chunks[detect_chunk_count:] or chunks
 
     extractor.set_tonic(f_tonic)
     history = []
