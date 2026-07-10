@@ -32,6 +32,8 @@ Every live mic session's raw audio (calibration + performance) is saved to `reco
 
 Auto-detected tonic is only as accurate as the underlying autocorrelation pitch detector's precision (median method) — in testing it landed within ~30 cents of the true tonic on a clean synthetic tone, which was enough on its own to occasionally push a borderline case toward an adjacent raga. This is a known precision ceiling of the existing algorithm, not something this wiring changed; a manually-entered tonic is more reliable when accuracy matters.
 
+`FeatureExtractor._pitch_autocorrelation()` (`feature_extraction.py`) picks the tallest autocorrelation peak within the valid `[min_freq, max_freq]` lag range and requires it to clear a minimum confidence (30% of the zero-lag value) - not simply the first peak found scanning outward from lag 0. The naive first-peak version was found to be prone to octave/harmonic errors on real (non-synthetic) audio: on one real recording, 64% of detected "pitches" were an implausible >600Hz, and about half of those had a taller, more plausible peak sitting at a longer lag that the old logic never examined. `eval_harness.py`'s clean sine-tone synthesis never exposed this, since a pure tone's first and tallest peaks coincide. See `PROJECT_PLAN.md`'s 2026-07-10 entries for the full investigation, including a regression this fix's first draft caused in `eval_harness.py` (95.2% → 74.6%, traced to an unrelated one-sample peak-index change bundled into the same edit, not the octave-error fix itself) and how it was isolated and reverted.
+
 Module self-tests (no test framework/pytest is set up in this repo):
 ```bash
 python3 config.py              # validates RAAGA_DATABASE histograms via validate_config()

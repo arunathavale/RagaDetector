@@ -8,6 +8,7 @@ import librosa
 import logging
 from config import (
     SAMPLE_RATE,
+    BUFFER_SIZE,
     MIN_FREQUENCY,
     MAX_FREQUENCY,
     HISTOGRAM_BINS,
@@ -177,51 +178,90 @@ class FeatureExtractor:
             logger.debug(f"Pitch extraction failed: {e}")
             return None
     
+    MIN_AUTOCORR_CONFIDENCE = 0.3  # peak value must be at least this fraction of the
+    # zero-lag value to count as a real periodicity, not noise/unvoiced content
+
     def _pitch_autocorrelation(self, audio_chunk):
         """
         Fast autocorrelation-based pitch detection.
-        
+
+        Picks the TALLEST local peak within the valid [min_freq, max_freq] lag
+        range, not the first one encountered scanning outward from lag 0. Taking
+        the first peak is a classic octave/harmonic-error trap: on real (non-sine)
+        audio, a strong harmonic or a burst of noise/breath often produces a
+        taller, earlier peak at a short lag (= high, implausible frequency) while
+        the true fundamental's peak sits further out at a longer lag but was never
+        examined. Found via real recordings where autocorrelation-detected
+        "pitches" were dominated (>60% of frames in one test file) by
+        implausible >600Hz values; for roughly half of those, a taller peak
+        existed at a lower, far more plausible frequency that the old
+        first-peak logic skipped straight past.
+
+        Peak location intentionally uses the same index convention as the
+        original first-peak logic (the index where the derivative's sign flips,
+        not index+1, which is technically where the local max actually sits) -
+        an initial version "corrected" this and it measurably hurt real
+        detection: it shifts every single-chunk detection by exactly one lag
+        sample (a few Hz, imperceptible on its own), but that shift was enough
+        to push eval_harness.py's synthetic accuracy from 95.2% to 74.6%,
+        concentrated in Marwa/Puriya - a same-thaat pair already distinguished
+        only by fine-grained note-weighting, not note presence (see config.py),
+        evidently right on the edge of that distinction. Isolated by A/B testing
+        each change independently: neither this selection change nor the
+        confidence threshold alone caused the regression - only the index
+        correction did, in isolation. The octave-error fix itself (which peak to
+        pick) doesn't depend on which index convention is used, so there's no
+        real-data reason to prefer the "more correct" index over the one
+        everything else here was already tuned against.
+
         Args:
             audio_chunk: Audio samples as numpy array
-        
+
         Returns:
             Fundamental frequency in Hz, or None if detection fails
         """
         # Apply windowing to reduce edge effects
         window = np.hanning(len(audio_chunk))
         audio_windowed = audio_chunk * window
-        
+
         # Compute autocorrelation
         autocorr = np.correlate(audio_windowed, audio_windowed, mode='full')
         autocorr = autocorr[len(autocorr)//2:]
-        
-        # Find the first peak after the initial decay
+
+        if len(autocorr) < 2 or autocorr[0] <= 0:
+            return None
+
+        # Find where derivative changes from positive to negative (local peaks)
         d = np.diff(autocorr)
-        # Find where derivative changes from positive to negative (peak)
         peaks = np.where((d[:-1] > 0) & (d[1:] <= 0))[0]
-        
+        peaks = peaks[peaks > 0]  # exclude lag 0
+
         if len(peaks) == 0:
             return None
-        
-        # Use the first significant peak
-        first_peak = peaks[0]
-        
-        # Skip the very first peak (at lag 0)
-        if first_peak == 0 and len(peaks) > 1:
-            first_peak = peaks[1]
-        
-        if first_peak == 0:
+
+        # Restrict to peaks whose lag falls within the valid frequency range
+        # BEFORE picking the tallest one, so a strong out-of-range peak can't win
+        lag_min = self.sample_rate / self.max_freq
+        lag_max = self.sample_rate / self.min_freq
+        valid_peaks = peaks[(peaks >= lag_min) & (peaks <= lag_max)]
+
+        if len(valid_peaks) == 0:
             return None
-        
-        # Convert lag to frequency
-        frequency = self.sample_rate / first_peak
-        
-        # Validate frequency is within range and not NaN/infinite
+
+        best_peak = valid_peaks[np.argmax(autocorr[valid_peaks])]
+
+        # Reject weak/ambiguous periodicity (noise, unvoiced consonants, breath)
+        # rather than confidently returning a guess with no real basis
+        if autocorr[best_peak] / autocorr[0] < self.MIN_AUTOCORR_CONFIDENCE:
+            return None
+
+        frequency = self.sample_rate / best_peak
+
         if not np.isfinite(frequency):
             return None
         if frequency < self.min_freq or frequency > self.max_freq:
             return None
-        
+
         return frequency
     
     def _pitch_librosa(self, audio_chunk):
@@ -559,10 +599,16 @@ if __name__ == '__main__':
     print("Feature Extraction Test")
     print("======================")
     
-    # Generate test audio (sine wave at 440Hz)
-    duration = 1.0  # seconds
+    # Generate test audio (sine wave at 440Hz), one BUFFER_SIZE chunk (~23ms) -
+    # matching how extract_pitch is actually called in the real pipeline
+    # (AudioStream and load_file_chunks() both deliver BUFFER_SIZE-sized chunks).
+    # A full 1-second buffer was never representative of real usage and, once
+    # _pitch_autocorrelation() started picking the tallest in-range peak instead
+    # of just the first one, produced a wrong result specific to that unrealistic
+    # buffer length (many genuine same-pitch harmonics fit in 1s, and one of the
+    # later ones can outscore the fundamental's).
     test_frequency = 440.0  # Hz (A4)
-    t = np.linspace(0, duration, int(SAMPLE_RATE * duration), endpoint=False)
+    t = np.linspace(0, BUFFER_SIZE / SAMPLE_RATE, BUFFER_SIZE, endpoint=False)
     test_audio = 0.5 * np.sin(2 * np.pi * test_frequency * t)
     
     # Create feature extractor
@@ -590,9 +636,12 @@ if __name__ == '__main__':
     bin_index = extractor.cents_to_bin(wrapped_cents)
     print(f"Bin index: {bin_index}")
     
-    # Test full pipeline
+    # Test full pipeline across several realistic-sized chunks (each chunk is
+    # still BUFFER_SIZE samples - just more of them, to exercise build_histogram())
     print("\nTesting full pipeline on multiple chunks...")
-    chunks = [test_audio[i:i+1024] for i in range(0, len(test_audio), 1024)]
+    t_multi = np.linspace(0, 1.0, int(SAMPLE_RATE * 1.0), endpoint=False)
+    multi_chunk_audio = 0.5 * np.sin(2 * np.pi * test_frequency * t_multi)
+    chunks = [multi_chunk_audio[i:i+BUFFER_SIZE] for i in range(0, len(multi_chunk_audio), BUFFER_SIZE)]
     histogram = extractor.build_histogram(chunks)
     
     print(f"Histogram shape: {histogram.shape}")
