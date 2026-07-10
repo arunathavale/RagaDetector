@@ -328,31 +328,40 @@ def pitch_to_frame_histogram(extractor, pitch):
     frame[bin_index] = 1.0
     return frame
 
-def determine_tonic_from_pitches(pitches, intended_raga, classifier,
-                                  search_min_hz=TYPICAL_TONIC_RANGE_HZ[0],
+DRONE_FOURTH_SEMITONE = 5   # Ma_shuddha - Sa-Ma drone dyad
+DRONE_FIFTH_SEMITONE = 7    # Pa - Sa-Pa drone dyad, more common Hindustani tuning
+DRONE_FOURTH_WEIGHT = 0.5
+DRONE_FIFTH_WEIGHT = 0.8
+
+def determine_tonic_from_pitches(pitches, search_min_hz=TYPICAL_TONIC_RANGE_HZ[0],
                                   search_max_hz=TYPICAL_TONIC_RANGE_HZ[1]):
-    """Find the tonic that makes intended_raga classify most confidently, by
-    exploiting that changing tonic is equivalent to a circular shift of the
-    pitch-class histogram (cents = 1200*log2(f/tonic) mod 1200 - shifting the
-    reference point just rotates every detection's bin by a constant amount).
-    Same technique as find_optimal_tonic.py's find_best_tonic(), reimplemented
+    """Find the tonic using drone-interval priors: a tanpura almost always drones
+    on Sa+Pa (fifth, 700 cents) or Sa+Ma (fourth, 500 cents) - a structural signal
+    from how the accompanying instrument is TUNED, not from what's being sung, so
+    it works without knowing the raga in advance.
+
+    Deliberately does NOT take the intended/target raga as input, even though one
+    is asked for at session start and is available here. An earlier version of
+    this function searched for "the tonic that makes raga X classify best" - but
+    the ultimate goal is raga IDENTIFICATION, where the raga is exactly the
+    unknown being detected. That version only ever validated correctly because it
+    was handed the true answer as a label; using it here would be circular and
+    silently rely on information the real use case doesn't have. The
+    intended-raga input is legitimately used elsewhere (recording filename,
+    after-the-fact PASS/FAIL scoring, theoretical-histogram comparison in the
+    dashboard) - just never fed into detection itself, tonic or raga.
+
+    Exploits the same circular-shift property as the file-search tools in this
+    project (changing tonic is a rotation of the pitch-class histogram: cents =
+    1200*log2(f/tonic) mod 1200). Same technique as find_optimal_tonic.py's
+    score_drone_priors()/find_best_tonic_by_drone_priors(), reimplemented
     directly here (rather than imported) since find_optimal_tonic.py imports
     from this module and importing back would be circular.
 
-    Ranked by gap over the 2nd-best raga rather than raw score, since
-    classify()'s min-max normalization always shows the winner at exactly
-    100% regardless of how good a fit it actually is - the gap is what
-    actually distinguishes a confident match from a coin flip.
-
-    Because the intended raga is already known (asked at session start,
-    unlike the old blind "sing your Sa" + manual-entry flow this replaces),
-    this can search directly for the tonic that best fits THAT raga rather
-    than blindly searching for any (tonic, raga) pair - which was tested
-    earlier this session and found unreliable on its own.
-
-    Returns (tonic_hz, gap) or (None, None) if no pitches were provided."""
+    Returns (tonic_hz, sa_strength, ma_strength, pa_strength), or all-None if no
+    pitches were provided."""
     if not pitches:
-        return None, None
+        return None, None, None, None
 
     cents_per_bin = 1200.0 / HISTOGRAM_BINS
     anchor_hz = 1.0
@@ -363,27 +372,49 @@ def determine_tonic_from_pitches(pitches, intended_raga, classifier,
         anchor_hist[b] += 1
     total = np.sum(anchor_hist)
     if total == 0:
-        return None, None
+        return None, None, None, None
     anchor_hist /= total
 
     lowest_octave_hz = anchor_hz * (2 ** np.floor(np.log2(search_min_hz / anchor_hz)))
-    best_tonic, best_gap = None, -2.0
+    best_tonic, best_score, best_components = None, -1.0, (0.0, 0.0, 0.0)
     hz = lowest_octave_hz
     while hz <= search_max_hz * 2:
         for shift in range(HISTOGRAM_BINS):
             tonic_hz = hz * (2 ** (shift * cents_per_bin / 1200.0))
             if search_min_hz <= tonic_hz <= search_max_hz:
-                shifted = np.roll(anchor_hist, -shift)
-                scores = classifier.classify(shifted)
-                winner = max(scores, key=scores.get)
-                others = sorted((s for r, s in scores.items() if r != winner), reverse=True)
-                gap = scores[winner] - (others[0] if others else 0.0)
-                signed_gap = gap if winner == intended_raga else -gap
-                if signed_gap > best_gap:
-                    best_gap = signed_gap
-                    best_tonic = tonic_hz
+                hist = np.roll(anchor_hist, -shift)
+                sa = np.sum(hist[0:BINS_PER_SEMITONE])
+                ma = np.sum(hist[DRONE_FOURTH_SEMITONE*BINS_PER_SEMITONE:(DRONE_FOURTH_SEMITONE+1)*BINS_PER_SEMITONE])
+                pa = np.sum(hist[DRONE_FIFTH_SEMITONE*BINS_PER_SEMITONE:(DRONE_FIFTH_SEMITONE+1)*BINS_PER_SEMITONE])
+                score = sa + max(DRONE_FOURTH_WEIGHT * ma, DRONE_FIFTH_WEIGHT * pa)
+                if score > best_score:
+                    best_score, best_tonic, best_components = score, tonic_hz, (sa, ma, pa)
         hz *= 2
-    return best_tonic, best_gap
+    return (best_tonic,) + best_components
+
+def print_tonic_stability_check(pitches, f_tonic, n_segments=4):
+    """Split Phase 1's pitches into n_segments equal, time-ordered chunks (the list
+    is already in capture order) and independently drone-tonic each one. Tonic
+    essentially never changes mid-performance, so disagreement across segments
+    flags a pitch-tracking problem in that portion, not a real tonic shift - same
+    diagnostic as find_optimal_tonic.py's check_tonic_stability(), reimplemented
+    locally here for the same reason as determine_tonic_from_pitches() above."""
+    if len(pitches) < n_segments * 10:
+        return
+    seg_len = len(pitches) // n_segments
+    print("\n Tonic stability check (segment-by-segment, drone priors):")
+    cents_offsets = []
+    for i in range(n_segments):
+        seg = pitches[i*seg_len:] if i == n_segments - 1 else pitches[i*seg_len:(i+1)*seg_len]
+        seg_tonic = determine_tonic_from_pitches(seg)[0]
+        if seg_tonic is not None:
+            cents_off = 1200.0 * np.log2(seg_tonic / f_tonic)
+            cents_offsets.append(cents_off)
+            print(f"   Segment {i+1}: {seg_tonic:.2f} Hz ({cents_off:+.0f} cents vs. overall)")
+    if cents_offsets:
+        spread = max(cents_offsets) - min(cents_offsets)
+        flag = " ⚠️  meaningful disagreement" if spread > 50 else " (consistent)"
+        print(f"   Max spread: {spread:.0f} cents{flag}")
 
 def run_live_mode(extractor, classifier, intended_raga):
     streamer = AudioStream(sample_rate=SAMPLE_RATE, buffer_size=BUFFER_SIZE)
@@ -411,7 +442,7 @@ def run_live_mode(extractor, classifier, intended_raga):
                 raw_pitches.append(p)
         time.sleep(0.1)
 
-    f_tonic, gap = determine_tonic_from_pitches(raw_pitches, intended_raga, classifier)
+    f_tonic, sa_s, ma_s, pa_s = determine_tonic_from_pitches(raw_pitches)
     if f_tonic is None:
         f_tonic, tonic_source = FALLBACK_TONIC_HZ, 'fallback_accepted'
         print(f"\n🚫 No pitch could be detected in the first {int(LIVE_TONIC_WINDOW_SECONDS)}s - "
@@ -419,10 +450,12 @@ def run_live_mode(extractor, classifier, intended_raga):
     else:
         tonic_source = 'auto_from_recording'
         lo, hi = TYPICAL_TONIC_RANGE_HZ
-        print(f"\nCalculated tonic: {f_tonic:.2f} Hz (confidence gap over 2nd-best raga: {gap*100:+.1f}%)")
+        print(f"\nCalculated tonic: {f_tonic:.2f} Hz (drone strength: Sa={sa_s*100:.1f}% "
+              f"Ma={ma_s*100:.1f}% Pa={pa_s*100:.1f}%)")
         if not (lo <= f_tonic <= hi):
             print(f"⚠️  {f_tonic:.2f} Hz is outside the typical vocal tonic range ({lo:.0f}-{hi:.0f} Hz) - "
                   f"worth a second look if this session's results seem off.")
+        print_tonic_stability_check(raw_pitches, f_tonic)
 
     extractor.set_tonic(f_tonic)
 
@@ -557,6 +590,9 @@ def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga):
 def main():
     os.system("clear")
     print("=" * 60 + "\n         RAGADETECTOR TESTING SETUP LAB\n" + "=" * 60)
+    print("(This label is only used to save/name the recording and score results")
+    print(" afterward against the theoretical swar distribution - it is never given")
+    print(" to the tonic or raga detector, which don't know the answer in advance.)")
     user_input = input("What Raaga do you plan to perform right now? (e.g. Marwa, Bhairav): ").strip()
 
     intended_raga = RAGA_SYNONYMS.get(user_input.lower(), user_input)
