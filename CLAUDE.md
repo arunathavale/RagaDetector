@@ -14,11 +14,17 @@ python3 main_22.py    # 7-raga "studio" mode: asks which raga you intend to sing
 ```
 
 `main_22.py` is the sole entry point (the old 2-raga `main.py` was retired in Phase 4 — see `PROJECT_PLAN.md`). It prompts for:
-1. The raga you intend to perform (for the PASS/FAIL comparison).
+1. The raga you intend to perform (for the PASS/FAIL comparison, and — as of the live-mode tonic redesign below — for the tonic search itself).
 2. An audio file path, or Enter for live mic.
-3. A tonic (Sa) frequency in Hz, or Enter to auto-detect from ~5 seconds of audio (`FeatureExtractor.auto_detect_tonic()`, median method) — in file mode this treats the *opening* 5 seconds as a calibration reference (e.g. a held Sa) and excludes it from the classification histogram, not just from detection; in live mode you're prompted to sing/hum Sa for 5 seconds before the main window starts.
+3. **File mode only**: a tonic (Sa) frequency in Hz, or Enter to auto-detect from the opening ~5 seconds of audio (`FeatureExtractor.auto_detect_tonic()`, median method), which is treated as a calibration reference and excluded from the classification histogram.
 
-Live mic mode runs for a fixed 4-minute window (`SESSION_DURATION_SECONDS` in `main_22.py` — a shorter window risked landing mostly in the alap before a performance settles into a fuller range of characteristic phrases), redraws a terminal dashboard once per second, and prints a JSON summary on exit. File mode processes the whole file once and prints a one-shot summary plus the same JSON block — no artificial time cap, since a file already has a finite, known length.
+**Live mic mode no longer asks for a tonic at all.** Manual entry and a separate blind "sing your Sa for 5 seconds" window were both tested extensively and repeatedly proved wrong or misleading — a live dashboard built on either is not trustworthy. Instead, `run_live_mode()` runs in two phases against one fixed `SESSION_DURATION_SECONDS` (4 min) budget:
+- **Phase 1** (`LIVE_TONIC_WINDOW_SECONDS`, 2 min): listens silently — no dashboard — while the singer performs normally, accumulating raw detected pitches. At the end, `determine_tonic_from_pitches()` finds the tonic that makes the *already-known intended raga* classify most confidently (ranked by gap over the 2nd-best raga), by circular-shifting a pitch-class histogram built from those pitches — the same technique `find_optimal_tonic.py`'s `find_best_tonic()` uses, reimplemented locally to avoid a circular import. This is fast (a few hundred shift/classify evaluations, well under a second) since pitch detection already happened progressively during the listening window.
+- **Phase 2** (remaining 2 min): the normal live dashboard, using the tonic calculated in Phase 1.
+
+Phase 1's pitch detections are real performance content, not throwaway calibration — they're converted to histogram frames (once tonic is known) and folded into the session's `history`/deviation report alongside Phase 2's, unlike the old calibration window which was excluded from both file mode and the pre-redesign live mode.
+
+Live mode redraws a terminal dashboard once per second during Phase 2, and prints a JSON summary on exit. File mode processes the whole file once and prints a one-shot summary plus the same JSON block — no artificial time cap, since a file already has a finite, known length.
 
 Every live mic session's raw audio (calibration + performance) is saved to `recordings/{raga}_{timestamp}.wav` when the session ends, regardless of pass/fail — live audio was previously processed and discarded in real time with no way to replay a session afterward. Saved recordings load through the same `load_file_chunks()` file mode uses, so any past session can be re-run through file mode directly (e.g. to compare pitch-detection methods, or as source material for empirical reference histograms). `recordings/` is gitignored.
 
@@ -41,7 +47,7 @@ Note: `requirements.txt` is unpinned to Python 3.8-era versions (numpy 1.21, lib
 
 `audio_stream.AudioStream` (PyAudio callback thread) → raw float32 chunks pushed into a `deque(maxlen=100)` → consumer pulls chunks → `feature_extraction.FeatureExtractor` does autocorrelation pitch detection → converts Hz to cents relative to a fixed tonic (`1200 * log2(f/f_tonic)`) → wraps to a single octave (0–1200 cents) → bins into one of 120 histogram bins (10 bins/semitone, for shruti-level resolution) → a rolling `deque` of recent frame-histograms is averaged into a "current" histogram → `RaagaClassifier.classify()` does plain cosine similarity against per-Raaga reference histograms → scores are min-max normalized and the argmax is the detected Raaga.
 
-Tonic (Sa) can be typed in manually or auto-detected (Phase 5, see `PROJECT_PLAN.md`) — `main_22.py` prompts for a Hz value and, if left blank, calls `FeatureExtractor.auto_detect_tonic()` against a calibration window of audio before switching to `extractor.set_tonic()` for the actual performance.
+Tonic (Sa) handling differs by mode. File mode can be typed in manually or auto-detected (Phase 5, see `PROJECT_PLAN.md`) — `main_22.py` prompts for a Hz value and, if left blank, calls `FeatureExtractor.auto_detect_tonic()` against a calibration window of audio. Live mode calculates it automatically via `determine_tonic_from_pitches()` (see "Running" above) — no prompt at all. Both paths end by calling `extractor.set_tonic()` before the actual performance/classification.
 
 ### One Raaga database, one entry point
 

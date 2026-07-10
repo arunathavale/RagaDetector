@@ -48,6 +48,11 @@ RECORDINGS_DIR = "recordings"
 SESSION_DURATION_SECONDS = 240.0  # 4 min - a 120s window risked landing mostly in
 # the alap (the slow, exploratory opening) before a performance settles into a
 # fuller range of characteristic phrases
+LIVE_TONIC_WINDOW_SECONDS = 120.0  # first half of the session: silent tonic
+# calculation from the singer's own real performance, instead of a separate blind
+# 5-second "sing your Sa" window or a manually-typed guess - both were repeatedly
+# wrong this session. A live display can't be trustworthy before a real tonic is
+# known, so don't show one until it is.
 
 class RaagaClassifier:
     NOISE_THRESHOLD = 0.05  # per-swara aggregate, not per-bin - see _apply_swara_threshold()
@@ -323,51 +328,128 @@ def pitch_to_frame_histogram(extractor, pitch):
     frame[bin_index] = 1.0
     return frame
 
-def run_live_mode(tonic_input, extractor, classifier, intended_raga):
+def determine_tonic_from_pitches(pitches, intended_raga, classifier,
+                                  search_min_hz=TYPICAL_TONIC_RANGE_HZ[0],
+                                  search_max_hz=TYPICAL_TONIC_RANGE_HZ[1]):
+    """Find the tonic that makes intended_raga classify most confidently, by
+    exploiting that changing tonic is equivalent to a circular shift of the
+    pitch-class histogram (cents = 1200*log2(f/tonic) mod 1200 - shifting the
+    reference point just rotates every detection's bin by a constant amount).
+    Same technique as find_optimal_tonic.py's find_best_tonic(), reimplemented
+    directly here (rather than imported) since find_optimal_tonic.py imports
+    from this module and importing back would be circular.
+
+    Ranked by gap over the 2nd-best raga rather than raw score, since
+    classify()'s min-max normalization always shows the winner at exactly
+    100% regardless of how good a fit it actually is - the gap is what
+    actually distinguishes a confident match from a coin flip.
+
+    Because the intended raga is already known (asked at session start,
+    unlike the old blind "sing your Sa" + manual-entry flow this replaces),
+    this can search directly for the tonic that best fits THAT raga rather
+    than blindly searching for any (tonic, raga) pair - which was tested
+    earlier this session and found unreliable on its own.
+
+    Returns (tonic_hz, gap) or (None, None) if no pitches were provided."""
+    if not pitches:
+        return None, None
+
+    cents_per_bin = 1200.0 / HISTOGRAM_BINS
+    anchor_hz = 1.0
+    anchor_hist = np.zeros(HISTOGRAM_BINS)
+    for p in pitches:
+        cents = (1200.0 * np.log2(p / anchor_hz)) % 1200.0
+        b = int(cents / cents_per_bin) % HISTOGRAM_BINS
+        anchor_hist[b] += 1
+    total = np.sum(anchor_hist)
+    if total == 0:
+        return None, None
+    anchor_hist /= total
+
+    lowest_octave_hz = anchor_hz * (2 ** np.floor(np.log2(search_min_hz / anchor_hz)))
+    best_tonic, best_gap = None, -2.0
+    hz = lowest_octave_hz
+    while hz <= search_max_hz * 2:
+        for shift in range(HISTOGRAM_BINS):
+            tonic_hz = hz * (2 ** (shift * cents_per_bin / 1200.0))
+            if search_min_hz <= tonic_hz <= search_max_hz:
+                shifted = np.roll(anchor_hist, -shift)
+                scores = classifier.classify(shifted)
+                winner = max(scores, key=scores.get)
+                others = sorted((s for r, s in scores.items() if r != winner), reverse=True)
+                gap = scores[winner] - (others[0] if others else 0.0)
+                signed_gap = gap if winner == intended_raga else -gap
+                if signed_gap > best_gap:
+                    best_gap = signed_gap
+                    best_tonic = tonic_hz
+        hz *= 2
+    return best_tonic, best_gap
+
+def run_live_mode(extractor, classifier, intended_raga):
     streamer = AudioStream(sample_rate=SAMPLE_RATE, buffer_size=BUFFER_SIZE)
     streamer.start()
 
-    recorded_chunks = []  # every chunk for the whole session (calibration + performance),
-    # saved to disk at the end regardless of pass/fail - see save_recording()
+    recorded_chunks = []  # every chunk for the whole session (tonic-calculation
+    # phase + live-display phase), saved to disk at the end regardless of pass/fail
 
-    def capture_and_detect():
-        print(f"\nSing or hum your Sa now - listening for {TONIC_DETECTION_SECONDS:.0f} seconds to auto-detect tonic...")
-        detect_chunks = []
-        detect_start = time.time()
-        while time.time() - detect_start < TONIC_DETECTION_SECONDS:
-            while len(streamer.audio_queue) > 0:
-                chunk = streamer.audio_queue.popleft()
-                detect_chunks.append(chunk)
-                recorded_chunks.append(chunk)
-            time.sleep(0.05)
-        return detect_tonic(extractor, detect_chunks)
+    # Phase 1: LIVE_TONIC_WINDOW_SECONDS of silent listening. No manual entry, no
+    # separate blind "sing your Sa" window - both were repeatedly wrong earlier this
+    # session. Instead, accumulate real pitches from the singer's actual performance
+    # and calculate the tonic that best fits the already-known intended raga.
+    print(f"\nListening for {int(LIVE_TONIC_WINDOW_SECONDS)}s to calculate your tonic from "
+          f"actual singing (sing normally - no live display until this finishes)...")
+    raw_pitches = []
+    phase1_start = time.time()
+    while time.time() - phase1_start < LIVE_TONIC_WINDOW_SECONDS:
+        remaining = max(0, int(LIVE_TONIC_WINDOW_SECONDS - (time.time() - phase1_start)))
+        print(f"  Calculating tonic... {remaining}s remaining, {len(raw_pitches)} pitch samples so far   ", end='\r')
+        while len(streamer.audio_queue) > 0:
+            c = streamer.audio_queue.popleft()
+            recorded_chunks.append(c)
+            p = extractor.extract_pitch(c)
+            if p and not np.isnan(p):
+                raw_pitches.append(p)
+        time.sleep(0.1)
 
-    manual_tonic = parse_tonic_input(tonic_input)
-    if manual_tonic is not None:
-        f_tonic, tonic_source = manual_tonic, 'manual'
+    f_tonic, gap = determine_tonic_from_pitches(raw_pitches, intended_raga, classifier)
+    if f_tonic is None:
+        f_tonic, tonic_source = FALLBACK_TONIC_HZ, 'fallback_accepted'
+        print(f"\n🚫 No pitch could be detected in the first {int(LIVE_TONIC_WINDOW_SECONDS)}s - "
+              f"using fallback {FALLBACK_TONIC_HZ} Hz, which has NO relationship to your actual voice.")
     else:
-        if tonic_input:
-            print(f"\n'{tonic_input}' isn't a number - auto-detecting tonic instead.")
-        detected_tonic, was_detected = capture_and_detect()
-        f_tonic, tonic_source = confirm_or_override_tonic(detected_tonic, was_detected, retry_fn=capture_and_detect)
+        tonic_source = 'auto_from_recording'
+        lo, hi = TYPICAL_TONIC_RANGE_HZ
+        print(f"\nCalculated tonic: {f_tonic:.2f} Hz (confidence gap over 2nd-best raga: {gap*100:+.1f}%)")
+        if not (lo <= f_tonic <= hi):
+            print(f"⚠️  {f_tonic:.2f} Hz is outside the typical vocal tonic range ({lo:.0f}-{hi:.0f} Hz) - "
+                  f"worth a second look if this session's results seem off.")
 
     extractor.set_tonic(f_tonic)
+
     history = deque(maxlen=int(ROLLING_WINDOW_SECONDS * (SAMPLE_RATE / BUFFER_SIZE)))
     full_session_frames = []  # unwindowed - every detection for the whole session,
     # for the end-of-run deviation report (history above is deliberately bounded for
     # live responsiveness and isn't representative of the full performance)
-    start_time = time.time()
+
+    # Phase 1's audio is genuine performance content, not throwaway calibration -
+    # fold it into the session's classification data now that tonic is known,
+    # rather than discarding it the way the old calibration window did.
+    for p in raw_pitches:
+        frame_hist = pitch_to_frame_histogram(extractor, p)
+        if frame_hist is not None:
+            history.append(frame_hist)
+            full_session_frames.append(frame_hist)
+
     raga_out = "Undetermined"
     s_out = {}
 
-    # Pre-draw dashboard immediately on ignition - no blank screen
     empty_hist = np.zeros(HISTOGRAM_BINS)
     empty_scores = {k: 0.0 for k in RAGA_REGISTRY.keys()}
-    draw_dashboard(0, f_tonic, empty_scores, intended_raga, empty_hist)
+    draw_dashboard(LIVE_TONIC_WINDOW_SECONDS, f_tonic, empty_scores, intended_raga, empty_hist)
 
     try:
         while True:
-            dt = time.time() - start_time
+            dt = time.time() - phase1_start
             if dt >= SESSION_DURATION_SECONDS: break
 
             queue_size = len(streamer.audio_queue)
@@ -485,9 +567,6 @@ def main():
 
     file_path = input("Path to an audio file to analyze (or press Enter to use the live mic): ").strip()
 
-    tonic_input = input("Enter target Artist Tonic Sa frequency in Hz (e.g. 145), "
-                         f"or press Enter to auto-detect from {TONIC_DETECTION_SECONDS:.0f} seconds of audio: ").strip()
-
     extractor = FeatureExtractor(sample_rate=SAMPLE_RATE)
     classifier = RaagaClassifier(RAGA_REGISTRY)
 
@@ -495,9 +574,13 @@ def main():
         if not os.path.isfile(file_path):
             print(f"\n❌ ERROR: file not found: {file_path}\n")
             sys.exit(1)
+        tonic_input = input("Enter target Artist Tonic Sa frequency in Hz (e.g. 145), "
+                             f"or press Enter to auto-detect from {TONIC_DETECTION_SECONDS:.0f} seconds of audio: ").strip()
         run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga)
     else:
-        run_live_mode(tonic_input, extractor, classifier, intended_raga)
+        # Live mode calculates its own tonic from the first LIVE_TONIC_WINDOW_SECONDS
+        # of actual singing - no manual entry, no separate blind calibration window.
+        run_live_mode(extractor, classifier, intended_raga)
 
 if __name__ == "__main__":
     main()
