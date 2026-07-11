@@ -6,6 +6,7 @@ and seamless integration with FeatureExtractor for live tracking.
 """
 
 import os
+import re
 import numpy as np
 import time
 from collections import deque
@@ -174,7 +175,7 @@ def print_deviation_report(report):
               f"deviation {sign}{r['deviation_pct']:>5.1f}%{flag}")
     print("-" * 70)
 
-def print_final_summary(raga_out, s_out, f_tonic, intended_raga, duration_s, deviation_report=None, tonic_source=None):
+def print_final_summary(raga_out, s_out, f_tonic, intended_raga, duration_s, deviation_report=None, tonic_source=None, artist_name=None):
     meta = RAGA_REGISTRY.get(raga_out, {"vadi": "Unknown", "samvadi": "Unknown", "pakad": []})
     is_match = "PASSED ✅" if raga_out.lower() == intended_raga.lower() else "FAILED ❌"
     if deviation_report:
@@ -182,6 +183,7 @@ def print_final_summary(raga_out, s_out, f_tonic, intended_raga, duration_s, dev
     print(f"\n============================================================\n CONCURRENT DETECTED RAAGA : {raga_out}\n VALIDATION LAB STATUS      : {is_match}\n------------------------------------------------------------")
     summary = {
         "session_metadata": {
+            "artist": artist_name or "Unknown",
             "execution_duration_seconds": round(duration_s, 2),
             "input_tonic_sa_hz": f_tonic,
             "tonic_source": tonic_source,
@@ -270,19 +272,27 @@ def load_file_chunks(filepath, sample_rate=SAMPLE_RATE, buffer_size=BUFFER_SIZE)
     audio, _ = librosa.load(filepath, sr=sample_rate, mono=True)
     return [audio[i:i + buffer_size] for i in range(0, len(audio), buffer_size)]
 
-def save_recording(chunks, intended_raga, sample_rate=SAMPLE_RATE):
+def save_recording(chunks, intended_raga, artist_name=None, sample_rate=SAMPLE_RATE):
     """Persist the raw session audio to disk so a live session can be re-analyzed
     later (different pitch-detection methods, building empirical reference
     histograms, etc.) without needing to re-run it - live audio is otherwise
     processed and discarded in real time with no record kept. Note: this only
     contains the non-silent chunks AudioStream's adaptive threshold already let
-    through, not a literal unedited recording including silence gaps."""
+    through, not a literal unedited recording including silence gaps.
+
+    Filename encodes the artist (sanitized, defaulting to "Unknown") alongside
+    the raga - added after a session spent significant time re-listening to old
+    recordings to figure out after the fact who was actually singing (several
+    turned out to be Bollywood songs or interrupted broadcasts, not usable
+    classical performances at all). Capturing this up front avoids repeating
+    that forensic work on every future batch of recordings."""
     if not chunks:
         return None
     os.makedirs(RECORDINGS_DIR, exist_ok=True)
     audio = np.concatenate(chunks).astype(np.float32)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    filepath = os.path.join(RECORDINGS_DIR, f"{intended_raga}_{timestamp}.wav")
+    safe_artist = re.sub(r'[^A-Za-z0-9]+', '', artist_name) if artist_name else "Unknown"
+    filepath = os.path.join(RECORDINGS_DIR, f"{intended_raga}_{safe_artist}_{timestamp}.wav")
     wavfile.write(filepath, sample_rate, audio)
     print(f"\nSaved session recording to {filepath}")
     return filepath
@@ -471,7 +481,7 @@ def print_tonic_stability_check(pitches, f_tonic, n_segments=4):
         flag = " ⚠️  meaningful disagreement" if spread > 50 else " (consistent)"
         print(f"   Max spread: {spread:.0f} cents{flag}")
 
-def run_live_mode(extractor, classifier, intended_raga):
+def run_live_mode(extractor, classifier, intended_raga, artist_name=None):
     streamer = AudioStream(sample_rate=SAMPLE_RATE, buffer_size=BUFFER_SIZE)
     streamer.start()
 
@@ -593,11 +603,11 @@ def run_live_mode(extractor, classifier, intended_raga):
             full_ch = np.mean(full_session_frames, axis=0)
             full_ch /= np.sum(full_ch) if np.sum(full_ch) > 0 else 1
             deviation_report = compute_swara_deviation_report(full_ch, intended_raga)
-        save_recording(recorded_chunks, intended_raga)
+        save_recording(recorded_chunks, intended_raga, artist_name=artist_name)
         print_final_summary(raga_out, s_out, f_tonic, intended_raga, duration_s=SESSION_DURATION_SECONDS,
-                             deviation_report=deviation_report, tonic_source=tonic_source)
+                             deviation_report=deviation_report, tonic_source=tonic_source, artist_name=artist_name)
 
-def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga):
+def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga, artist_name=None):
     print(f"\nLoading audio file: {file_path}")
     chunks = load_file_chunks(file_path)
     if not chunks:
@@ -651,7 +661,7 @@ def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga):
         print("\nNo pitch could be detected anywhere in the file.")
 
     print_final_summary(raga_out, s_out, f_tonic, intended_raga, duration_s=duration_s,
-                         deviation_report=deviation_report, tonic_source=tonic_source)
+                         deviation_report=deviation_report, tonic_source=tonic_source, artist_name=artist_name)
 
 def main():
     os.system("clear")
@@ -667,6 +677,15 @@ def main():
         print(f"Available choices: {list(RAGA_REGISTRY.keys())}\n")
         sys.exit(1)
 
+    # Captured up front and saved into the recording's filename/JSON summary so a
+    # known singer's identity doesn't have to be reconstructed by ear later - a
+    # meaningful chunk of a recent session went into exactly that after-the-fact
+    # forensic work, and it turned out several old recordings weren't even usable
+    # classical performances at all (Bollywood songs, an interrupted broadcast).
+    artist_input = input("Is the artist/singer known? Enter a name (e.g. 'Bhimsen Joshi', 'self'), "
+                          "or press Enter if unknown: ").strip()
+    artist_name = artist_input or None
+
     file_path = input("Path to an audio file to analyze (or press Enter to use the live mic): ").strip()
 
     extractor = FeatureExtractor(sample_rate=SAMPLE_RATE)
@@ -678,11 +697,11 @@ def main():
             sys.exit(1)
         tonic_input = input("Enter target Artist Tonic Sa frequency in Hz (e.g. 145), "
                              f"or press Enter to auto-detect from {TONIC_DETECTION_SECONDS:.0f} seconds of audio: ").strip()
-        run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga)
+        run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga, artist_name=artist_name)
     else:
         # Live mode calculates its own tonic from the first LIVE_TONIC_WINDOW_SECONDS
         # of actual singing - no manual entry, no separate blind calibration window.
-        run_live_mode(extractor, classifier, intended_raga)
+        run_live_mode(extractor, classifier, intended_raga, artist_name=artist_name)
 
 if __name__ == "__main__":
     main()
