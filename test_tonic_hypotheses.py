@@ -26,9 +26,15 @@ current behavior - no window exclusion). The raga label is inferred from the
 filename (stripped of trailing digits), used only for scoring, never fed into
 detection.
 
-Fill in MANUAL_TONIC_HZ below as you go through files by ear. Leave as None
-for files you haven't listened to yet - those are skipped in the manual
-column, not guessed at.
+Fill in MANUAL_TONIC_HZ below as you go through files by ear. Each entry can
+be:
+  'male' / 'female'  - shorthand, converted to MALE_TONIC_HZ/FEMALE_TONIC_HZ
+                       below (140/220 Hz, averaged from 10 well-known singers
+                       each - see PROJECT_PLAN.md's 2026-07-11 entry)
+  a number           - an exact Hz value, if you want to fine-tune beyond the
+                       gender default
+  None               - not listened to yet; skipped in the manual column,
+                       not guessed at
 
 Usage: python3 test_tonic_hypotheses.py
 """
@@ -43,6 +49,9 @@ from main_22 import (
     SAMPLE_RATE, BUFFER_SIZE, LIVE_TONIC_WINDOW_SECONDS, RECORDINGS_DIR,
 )
 
+MALE_TONIC_HZ = 140.0    # averaged from 10 well-known male singers (139.69 Hz)
+FEMALE_TONIC_HZ = 220.0  # averaged from 10 well-known female singers (216.14 Hz)
+
 MANUAL_TONIC_HZ = {
     'yaman01.wav': None,
     'yaman02.wav': None,
@@ -51,6 +60,19 @@ MANUAL_TONIC_HZ = {
     'bhoop01.wav': None,
     'bhoop02.wav': None,
 }
+
+
+def resolve_manual_hz(entry):
+    if entry is None:
+        return None
+    if isinstance(entry, str):
+        key = entry.strip().lower()
+        if key == 'male':
+            return MALE_TONIC_HZ
+        if key == 'female':
+            return FEMALE_TONIC_HZ
+        raise ValueError(f"MANUAL_TONIC_HZ entry {entry!r} must be 'male', 'female', a number, or None")
+    return float(entry)
 
 
 def infer_raga_from_filename(filepath):
@@ -138,7 +160,7 @@ def main():
         if raga is None:
             print(f"{os.path.basename(f):<20} could not infer raga from filename - skipped")
             continue
-        manual_hz = MANUAL_TONIC_HZ.get(os.path.basename(f))
+        manual_hz = resolve_manual_hz(MANUAL_TONIC_HZ.get(os.path.basename(f)))
         print(f"  {f}...{'' if manual_hz is None else f' (manual: {manual_hz} Hz)'}")
         r = analyze_file(f, manual_hz, extractor, classifier)
         rows.append((f, raga, r))
