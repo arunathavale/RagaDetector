@@ -52,6 +52,12 @@ from main_22 import (
 MALE_TONIC_HZ = 140.0    # averaged from 10 well-known male singers (139.69 Hz)
 FEMALE_TONIC_HZ = 220.0  # averaged from 10 well-known female singers (216.14 Hz)
 
+# Fallback used for any file NOT explicitly listed in MANUAL_TONIC_HZ below -
+# set to None to skip the manual column by default (require an explicit
+# per-file entry), or 'male'/'female'/a number if you know most/all of a new
+# batch share the same singer gender and don't want to list every filename.
+DEFAULT_MANUAL_HZ = 'male'  # Arun confirmed the current batch is all male singers
+
 MANUAL_TONIC_HZ = {
     'yaman01.wav': None,
     'yaman02.wav': None,
@@ -59,6 +65,7 @@ MANUAL_TONIC_HZ = {
     'asawari02.wav': None,
     'bhoop01.wav': None,
     'bhoop02.wav': None,
+    'bhoop03.wav': None,
 }
 
 
@@ -160,7 +167,7 @@ def main():
         if raga is None:
             print(f"{os.path.basename(f):<20} could not infer raga from filename - skipped")
             continue
-        manual_hz = resolve_manual_hz(MANUAL_TONIC_HZ.get(os.path.basename(f)))
+        manual_hz = resolve_manual_hz(MANUAL_TONIC_HZ.get(os.path.basename(f), DEFAULT_MANUAL_HZ))
         print(f"  {f}...{'' if manual_hz is None else f' (manual: {manual_hz} Hz)'}")
         r = analyze_file(f, manual_hz, extractor, classifier)
         rows.append((f, raga, r))
