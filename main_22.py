@@ -614,17 +614,20 @@ def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga, 
         print("\n❌ ERROR: could not read any audio from the file.\n")
         sys.exit(1)
 
-    # Treat the opening TONIC_DETECTION_SECONDS as a calibration reference (e.g. a
-    # held Sa from save_recording()'s own capture flow), not performance content -
-    # folding it into the classification histogram would let it dominate and bias
-    # the result toward whatever bin it happens to land in. This trim is applied
-    # unconditionally, regardless of how the tonic itself is obtained below - manual
-    # tonic entry used to skip it, which meant re-analyzing one of our own saved
-    # recordings (a common, recommended workflow) with a manually-specified tonic
-    # gave a different, wrong result than auto-detect or find_optimal_tonic.py did
-    # on the exact same file and tonic.
-    detect_chunk_count = int(TONIC_DETECTION_SECONDS * SAMPLE_RATE / BUFFER_SIZE)
-    performance_chunks = chunks[detect_chunk_count:] or chunks
+    # File mode has the whole file available upfront, so tonic detection uses the
+    # same continuous-pyin approach validated for live mode's Phase 1 (see
+    # continuous_pyin_pitches()'s docstring - ~35% closer to a validated reference
+    # than plain per-chunk autocorrelation), over up to LIVE_TONIC_WINDOW_SECONDS of
+    # audio, rather than the old 5-second median-based auto-detect. That old
+    # approach assumed the file's opening seconds were a deliberately-held "Sa"
+    # calibration reference and excluded them from the classification histogram -
+    # true for our own now-retired live-recording ritual, but not for arbitrary
+    # downloaded files (a raga performance starting immediately, no calibration
+    # tone at all) or current-style live recordings (which no longer have that
+    # ritual either). So the opening window is no longer excluded from the
+    # histogram - it's genuine performance content, same reasoning as live mode.
+    n_tonic_chunks = int(LIVE_TONIC_WINDOW_SECONDS * SAMPLE_RATE / BUFFER_SIZE)
+    tonic_chunks = chunks[:n_tonic_chunks]
 
     manual_tonic = parse_tonic_input(tonic_input)
     if manual_tonic is not None:
@@ -632,13 +635,29 @@ def run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga, 
     else:
         if tonic_input:
             print(f"\n'{tonic_input}' isn't a number - auto-detecting tonic instead.")
-        detected_tonic, was_detected = detect_tonic(extractor, chunks[:detect_chunk_count])
+        print(f"Analyzing tonic (running pyin over up to {int(LIVE_TONIC_WINDOW_SECONDS)}s of audio)...")
+        tonic_window_audio = np.concatenate(tonic_chunks).astype(np.float32) if tonic_chunks else np.array([])
+        tonic_pitches = continuous_pyin_pitches(tonic_window_audio)
+        if not tonic_pitches:
+            for c in tonic_chunks:
+                p = extractor.extract_pitch(c)
+                if p and not np.isnan(p):
+                    tonic_pitches.append(p)
+
+        detected_tonic, sa_s, ma_s, pa_s = determine_tonic_from_pitches(tonic_pitches)
+        was_detected = detected_tonic is not None
+        if was_detected:
+            print(f"Auto-detected tonic: {detected_tonic:.2f} Hz (drone strength: Sa={sa_s*100:.1f}% "
+                  f"Ma={ma_s*100:.1f}% Pa={pa_s*100:.1f}%)")
+            print_tonic_stability_check(tonic_pitches, detected_tonic)
+        else:
+            detected_tonic = FALLBACK_TONIC_HZ
         f_tonic, tonic_source = confirm_or_override_tonic(detected_tonic, was_detected)  # no retry:
         # re-reading the same opening slice of the file would just return the identical value
 
     extractor.set_tonic(f_tonic)
     history = []
-    for chunk in performance_chunks:
+    for chunk in chunks:
         p = extractor.extract_pitch(chunk)
         if p and not np.isnan(p):
             frame_hist = pitch_to_frame_histogram(extractor, p)
@@ -673,6 +692,14 @@ def main():
 
     intended_raga = RAGA_SYNONYMS.get(user_input.lower(), user_input)
     if intended_raga not in RAGA_REGISTRY:
+        # RAGA_SYNONYMS only covers a few known misspellings/nicknames - fall back
+        # to a case-insensitive match against the registry itself, so a correctly
+        # spelled but differently-cased name (e.g. "asavari" vs "Asavari") doesn't
+        # error out unnecessarily.
+        case_insensitive_match = next(
+            (r for r in RAGA_REGISTRY if r.lower() == user_input.lower()), None)
+        intended_raga = case_insensitive_match
+    if intended_raga is None or intended_raga not in RAGA_REGISTRY:
         print(f"\n❌ ERROR: '{user_input}' is not in database registry!")
         print(f"Available choices: {list(RAGA_REGISTRY.keys())}\n")
         sys.exit(1)
@@ -695,8 +722,8 @@ def main():
         if not os.path.isfile(file_path):
             print(f"\n❌ ERROR: file not found: {file_path}\n")
             sys.exit(1)
-        tonic_input = input("Enter target Artist Tonic Sa frequency in Hz (e.g. 145), "
-                             f"or press Enter to auto-detect from {TONIC_DETECTION_SECONDS:.0f} seconds of audio: ").strip()
+        tonic_input = input("Enter the documented/known tonic Sa frequency in Hz (e.g. 145), "
+                             f"or press Enter to auto-detect from up to {int(LIVE_TONIC_WINDOW_SECONDS)} seconds of audio: ").strip()
         run_file_mode(file_path, tonic_input, extractor, classifier, intended_raga, artist_name=artist_name)
     else:
         # Live mode calculates its own tonic from the first LIVE_TONIC_WINDOW_SECONDS
