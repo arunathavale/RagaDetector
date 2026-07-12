@@ -180,22 +180,44 @@ class FeatureExtractor:
     
     MIN_AUTOCORR_CONFIDENCE = 0.3  # peak value must be at least this fraction of the
     # zero-lag value to count as a real periodicity, not noise/unvoiced content
+    SHORTEST_LAG_TOLERANCE = 0.85  # see _pitch_autocorrelation() - how close to the
+    # tallest peak's height a shorter-lag peak must be to win over it
 
     def _pitch_autocorrelation(self, audio_chunk):
         """
         Fast autocorrelation-based pitch detection.
 
-        Picks the TALLEST local peak within the valid [min_freq, max_freq] lag
-        range, not the first one encountered scanning outward from lag 0. Taking
-        the first peak is a classic octave/harmonic-error trap: on real (non-sine)
-        audio, a strong harmonic or a burst of noise/breath often produces a
-        taller, earlier peak at a short lag (= high, implausible frequency) while
-        the true fundamental's peak sits further out at a longer lag but was never
-        examined. Found via real recordings where autocorrelation-detected
-        "pitches" were dominated (>60% of frames in one test file) by
-        implausible >600Hz values; for roughly half of those, a taller peak
-        existed at a lower, far more plausible frequency that the old
-        first-peak logic skipped straight past.
+        Among local peaks within the valid [min_freq, max_freq] lag range,
+        picks the SHORTEST-LAG peak that's still within SHORTEST_LAG_TOLERANCE
+        of the tallest peak's height - not simply the first peak encountered,
+        and not simply the tallest peak overall. Both simpler rules turned out
+        to be real bugs, each confirmed on real recordings:
+
+        - First-peak (the original logic): a strong harmonic or a burst of
+          noise/breath often produces a taller, earlier peak at a short lag (=
+          high, implausible frequency), while the true fundamental's peak sits
+          further out, never examined. Confirmed on a real Bhairav recording -
+          >60% of frames read as an implausible >600Hz, and for about half of
+          those, a taller peak existed at a lower, more plausible frequency
+          that first-peak logic skipped straight past.
+        - Tallest-peak (this file's first fix): overcorrects the other way - on
+          a different real recording (Bhimsen Joshi's Yaman, this project's
+          most-validated reference file, known-correct tonic 110.79 Hz), the
+          tallest peak in range sat at a LONGER lag than the true fundamental's
+          own peak (plausibly a resonance or sub-harmonic that happened to be
+          taller), flipping a confident, correct Yaman classification (100%
+          vs. 43.7% runner-up) into a confident, wrong Asavari one. Isolated by
+          reverting to first-peak logic and confirming it restored the
+          original correct result.
+
+        This middle ground keeps the Bhairav fix (a short-lag peak that's only
+        weakly supported - the wrong peak there was ~70% of the correct one's
+        height - still loses to a substantially taller peak further out) while
+        no longer discarding a short-lag peak that's nearly as tall as the
+        global max just because something slightly taller exists elsewhere
+        (which is what broke the Bhimsen Joshi file). Not yet re-validated
+        against every case this session touched - see PROJECT_PLAN.md for
+        follow-up.
 
         Peak location intentionally uses the same index convention as the
         original first-peak logic (the index where the derivative's sign flips,
@@ -206,13 +228,7 @@ class FeatureExtractor:
         to push eval_harness.py's synthetic accuracy from 95.2% to 74.6%,
         concentrated in Marwa/Puriya - a same-thaat pair already distinguished
         only by fine-grained note-weighting, not note presence (see config.py),
-        evidently right on the edge of that distinction. Isolated by A/B testing
-        each change independently: neither this selection change nor the
-        confidence threshold alone caused the regression - only the index
-        correction did, in isolation. The octave-error fix itself (which peak to
-        pick) doesn't depend on which index convention is used, so there's no
-        real-data reason to prefer the "more correct" index over the one
-        everything else here was already tuned against.
+        evidently right on the edge of that distinction.
 
         Args:
             audio_chunk: Audio samples as numpy array
@@ -240,7 +256,7 @@ class FeatureExtractor:
             return None
 
         # Restrict to peaks whose lag falls within the valid frequency range
-        # BEFORE picking the tallest one, so a strong out-of-range peak can't win
+        # BEFORE picking among them, so a strong out-of-range peak can't win
         lag_min = self.sample_rate / self.max_freq
         lag_max = self.sample_rate / self.min_freq
         valid_peaks = peaks[(peaks >= lag_min) & (peaks <= lag_max)]
@@ -248,7 +264,18 @@ class FeatureExtractor:
         if len(valid_peaks) == 0:
             return None
 
-        best_peak = valid_peaks[np.argmax(autocorr[valid_peaks])]
+        # valid_peaks is already in increasing-lag order (peaks was built by a
+        # single forward scan) - walk it and take the first one tall enough
+        # relative to the tallest, rather than unconditionally the tallest.
+        # Threshold is shifted DOWN from tallest_height by a fraction of its
+        # magnitude (not simply tallest_height * tolerance) so this stays
+        # correct when tallest_height is negative (autocorrelation can dip
+        # below zero) - a plain multiplicative threshold would then sit ABOVE
+        # tallest_height, making the comparison below impossible to satisfy
+        # even for the tallest peak itself.
+        tallest_height = np.max(autocorr[valid_peaks])
+        threshold = tallest_height - abs(tallest_height) * (1 - self.SHORTEST_LAG_TOLERANCE)
+        best_peak = next(p for p in valid_peaks if autocorr[p] >= threshold)
 
         # Reject weak/ambiguous periodicity (noise, unvoiced consonants, breath)
         # rather than confidently returning a guess with no real basis
