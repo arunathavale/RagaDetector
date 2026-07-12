@@ -91,8 +91,20 @@ def infer_raga_from_filename(filepath):
     return match
 
 
+# Confirmed by Arun to be re-exports/re-clips of a single source recording, not
+# independent performances - not byte-identical (so a simple checksum can't
+# catch this), but suspiciously small/similarly-sized files with tightly
+# clustered auto-detected tonics. Excluded so batch statistics aren't diluted
+# by counting one recording as five.
+KNOWN_DUPLICATE_FILES = {
+    'yaman23.wav', 'yaman24.wav', 'yaman25.wav', 'yaman26.wav', 'yaman27.wav',
+}
+
+
 def is_downloaded_test_file(filepath):
     stem = os.path.splitext(os.path.basename(filepath))[0]
+    if os.path.basename(filepath) in KNOWN_DUPLICATE_FILES:
+        return False
     return '_' not in stem  # this project's own recordings always have underscores
 
 
