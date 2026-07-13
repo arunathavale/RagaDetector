@@ -341,6 +341,58 @@ def pitch_to_frame_histogram(extractor, pitch):
     frame[bin_index] = 1.0
     return frame
 
+MIN_NYAS_FRAMES = 15  # see extract_nyas_sequence() - roughly 0.3-0.4s of BUFFER_SIZE
+# chunks at SAMPLE_RATE, a rough floor for "genuinely held" vs. a passing glide tone
+
+def extract_nyas_sequence(extractor, pitches, min_nyas_frames=MIN_NYAS_FRAMES):
+    """Convert a time-ordered pitch stream into a sequence of discrete swara
+    (nyas - held/resting note) events, instead of the flat, order-blind
+    histogram every other classifier in this project uses. Groups consecutive
+    same-swara detections into runs and keeps only runs at least
+    min_nyas_frames long - a real vocal glide/meend passes through many swara
+    bins in quick succession (each individual bin's run is short), while a
+    genuinely held note produces a long run of consecutive same-swara frames.
+    This is the foundation aroha/avaroha/pakad sequence matching needs (you
+    can't match a melodic phrase against a flat bag of notes) and, as a side
+    effect, filters out exactly the kind of ornamentation-driven false notes
+    diagnosed this session (e.g. Kaushiki Chakraborty's Yaman recording
+    reading heavy contamination across every komal note simultaneously,
+    consistent with meend transiting through them rather than resting there).
+
+    Requires the extractor's tonic to already be set - swara identity is
+    tonic-relative. Repeated returns to the same swara (e.g. Yaman's pakad
+    visiting Sa twice) are intentionally kept as separate sequence entries,
+    not merged - aroha/avaroha/pakad data itself is written with meaningful
+    repeated notes, not a deduplicated set.
+
+    Returns a list of (swara_index, frame_count) tuples, swara_index in
+    config.SWARA_MAPPING's fixed 0-11 order (frame_count is a rough duration
+    proxy - a count of consecutive detections, not converted to seconds,
+    since chunk timing isn't perfectly uniform across silence-gated capture)."""
+    if not pitches:
+        return []
+
+    swara_indices = []
+    for p in pitches:
+        cents = extractor.frequency_to_cents(p)
+        wrapped = extractor.wrap_to_octave(cents)
+        bin_index = extractor.cents_to_bin(wrapped)
+        swara_indices.append(bin_index // BINS_PER_SEMITONE if bin_index is not None else None)
+
+    sequence = []
+    run_swara, run_length = None, 0
+    for s in swara_indices:
+        if s == run_swara:
+            run_length += 1
+        else:
+            if run_swara is not None and run_length >= min_nyas_frames:
+                sequence.append((run_swara, run_length))
+            run_swara, run_length = s, 1
+    if run_swara is not None and run_length >= min_nyas_frames:
+        sequence.append((run_swara, run_length))
+
+    return sequence
+
 DRONE_FOURTH_SEMITONE = 5   # Ma_shuddha - Sa-Ma drone dyad
 DRONE_FIFTH_SEMITONE = 7    # Pa - Sa-Pa drone dyad, more common Hindustani tuning
 DRONE_FOURTH_WEIGHT = 0.5
