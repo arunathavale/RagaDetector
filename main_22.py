@@ -9,7 +9,7 @@ import os
 import re
 import numpy as np
 import time
-from collections import deque
+from collections import deque, Counter
 import logging
 import json
 import sys
@@ -343,18 +343,51 @@ def pitch_to_frame_histogram(extractor, pitch):
 
 MIN_NYAS_FRAMES = 15  # see extract_nyas_sequence() - roughly 0.3-0.4s of BUFFER_SIZE
 # chunks at SAMPLE_RATE, a rough floor for "genuinely held" vs. a passing glide tone
+NYAS_SMOOTHING_WINDOW = 5  # see _smooth_swara_sequence()
+
+def _smooth_swara_sequence(swara_indices, window_size=NYAS_SMOOTHING_WINDOW):
+    """Median/mode filter over the raw per-frame swara sequence: replace each
+    frame's value with the most common value in a window centered on it.
+    Standard technique for removing brief single-frame noise spikes while
+    preserving genuine, sustained transitions.
+
+    Needed because extract_nyas_sequence()'s run-length grouping was found to
+    be far too brittle on real audio: it requires a run of PERFECTLY
+    consecutive identical-swara frames, with zero tolerance for even one
+    stray frame. Clean synthetic sine tones never produce a stray frame mid-
+    note, so this worked fine there (validated with exact pakad reconstruction
+    - see PROJECT_PLAN.md's 2026-07-11 entry) - but real singing has natural
+    vibrato/micro-wobble that flickers a frame into a neighboring bin even
+    while a singer is clearly, genuinely holding a note, which reset the run
+    count to zero every time. Confirmed directly: one real 4.5-minute
+    recording with over 10,000 raw pitch detections produced only 12 nyas
+    events before this fix, and another produced just 1 - the exact "works on
+    synthetic, breaks on real audio" pattern that has bitten this project
+    multiple times this session (the per-bin histogram bug, the pitch-
+    detector octave-error bug)."""
+    n = len(swara_indices)
+    if n == 0:
+        return []
+    half = window_size // 2
+    smoothed = []
+    for i in range(n):
+        window = [s for s in swara_indices[max(0, i - half):min(n, i + half + 1)] if s is not None]
+        smoothed.append(Counter(window).most_common(1)[0][0] if window else None)
+    return smoothed
 
 def extract_nyas_sequence(extractor, pitches, min_nyas_frames=MIN_NYAS_FRAMES):
     """Convert a time-ordered pitch stream into a sequence of discrete swara
     (nyas - held/resting note) events, instead of the flat, order-blind
-    histogram every other classifier in this project uses. Groups consecutive
-    same-swara detections into runs and keeps only runs at least
-    min_nyas_frames long - a real vocal glide/meend passes through many swara
-    bins in quick succession (each individual bin's run is short), while a
-    genuinely held note produces a long run of consecutive same-swara frames.
-    This is the foundation aroha/avaroha/pakad sequence matching needs (you
-    can't match a melodic phrase against a flat bag of notes) and, as a side
-    effect, filters out exactly the kind of ornamentation-driven false notes
+    histogram every other classifier in this project uses. Smooths the raw
+    per-frame swara sequence (see _smooth_swara_sequence()) to absorb natural
+    vibrato/detection noise, then groups consecutive same-swara detections
+    into runs and keeps only runs at least min_nyas_frames long - a real
+    vocal glide/meend passes through many swara bins in quick succession
+    (each individual bin's run is short), while a genuinely held note
+    produces a long run of consecutive same-swara frames. This is the
+    foundation aroha/avaroha/pakad sequence matching needs (you can't match a
+    melodic phrase against a flat bag of notes) and, as a side effect,
+    filters out exactly the kind of ornamentation-driven false notes
     diagnosed this session (e.g. Kaushiki Chakraborty's Yaman recording
     reading heavy contamination across every komal note simultaneously,
     consistent with meend transiting through them rather than resting there).
@@ -372,12 +405,13 @@ def extract_nyas_sequence(extractor, pitches, min_nyas_frames=MIN_NYAS_FRAMES):
     if not pitches:
         return []
 
-    swara_indices = []
+    raw_swara_indices = []
     for p in pitches:
         cents = extractor.frequency_to_cents(p)
         wrapped = extractor.wrap_to_octave(cents)
         bin_index = extractor.cents_to_bin(wrapped)
-        swara_indices.append(bin_index // BINS_PER_SEMITONE if bin_index is not None else None)
+        raw_swara_indices.append(bin_index // BINS_PER_SEMITONE if bin_index is not None else None)
+    swara_indices = _smooth_swara_sequence(raw_swara_indices)
 
     sequence = []
     run_swara, run_length = None, 0
@@ -425,21 +459,49 @@ def build_raga_transitions(entry):
             transitions.add((indices[i], indices[i + 1]))
     return transitions
 
-def subsequence_match_ratio(observed_indices, target_indices):
+def subsequence_match_ratio(observed_indices, target_indices, max_span_multiplier=3.0, min_match_fraction=0.5):
     """Classic longest-common-subsequence-style check: how much of
     target_indices appears IN ORDER (not necessarily contiguous - other notes
     can appear in between) within observed_indices. Returns the fraction of
-    target_indices successfully matched, in [0, 1]. Used to score how much of
-    a raga's pakad (its specific identifying phrase) shows up in what was
-    actually sung, tolerating extra notes/repeats around it rather than
-    requiring an exact contiguous match."""
+    target_indices successfully matched, in [0, 1], scaled down by a SPAN
+    PENALTY if the matched notes end up spread far wider across
+    observed_indices than the pakad's own length would justify, and zeroed
+    out entirely if fewer than min_match_fraction of the pakad's notes were
+    found at all.
+
+    Both corrections were necessary, not optional - found on real data (see
+    PROJECT_PLAN.md's 2026-07-11 entry) that a naive version has TWO distinct
+    ways a short pakad (e.g. Puriya's, 4 notes) unfairly outscores a long one
+    (e.g. Bhairav's, 11 notes) purely by chance, not genuine resemblance:
+    (1) a FULL match spread across most of a long observed sequence - fixed
+    by the span penalty; (2) a PARTIAL match of just one or two notes (a
+    single common note like Sa appearing somewhere is nowhere near "the
+    pakad was sung," but the plain ratio still gave it credit, with an
+    almost-zero span since so few notes were found to spread out at all,
+    so the span penalty alone didn't catch it) - fixed by the minimum-match-
+    fraction floor. Both problems were the actual cause of a wrong raga
+    outscoring the correct one on two different real recordings this
+    session, not merely a synthetic-benchmark curiosity."""
     if not target_indices:
         return 0.0
     j = 0
-    for note in observed_indices:
+    first_match_pos, last_match_pos = None, None
+    for pos, note in enumerate(observed_indices):
         if j < len(target_indices) and note == target_indices[j]:
+            if first_match_pos is None:
+                first_match_pos = pos
+            last_match_pos = pos
             j += 1
-    return j / len(target_indices)
+    if j == 0:
+        return 0.0
+    match_ratio = j / len(target_indices)
+    if match_ratio < min_match_fraction:
+        return 0.0
+    span = last_match_pos - first_match_pos + 1
+    max_allowed_span = len(target_indices) * max_span_multiplier
+    if span > max_allowed_span:
+        match_ratio *= max_allowed_span / span
+    return match_ratio
 
 class SequenceClassifier:
     """Alternative to RaagaClassifier that scores a nyas (held-note) SEQUENCE
