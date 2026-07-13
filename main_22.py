@@ -393,6 +393,86 @@ def extract_nyas_sequence(extractor, pitches, min_nyas_frames=MIN_NYAS_FRAMES):
 
     return sequence
 
+def _raga_sequence_to_indices(entry, key):
+    """config.RAAGA_DATABASE's aroha/avroha/pakad lists are swara NAMES
+    (strings); convert to the same 0-11 index space extract_nyas_sequence()
+    uses, dropping anything not in SWARA_MAPPING (defensive - all entries are
+    expected to be valid names)."""
+    return [SWARA_MAPPING[s] for s in entry.get(key, []) if s in SWARA_MAPPING]
+
+def build_raga_transitions(entry):
+    """The set of (from_swara_index, to_swara_index) bigrams that occur
+    anywhere in a raga's aroha, avroha, or pakad - i.e. which note-to-note
+    moves are actually part of this raga's melodic vocabulary. Used to score
+    how consistent an OBSERVED sequence's own transitions are with a
+    candidate raga, the way a flat histogram never can (it has no concept of
+    "this note followed that one")."""
+    transitions = set()
+    for key in ('aroha', 'avroha', 'pakad'):
+        indices = _raga_sequence_to_indices(entry, key)
+        for i in range(len(indices) - 1):
+            transitions.add((indices[i], indices[i + 1]))
+    return transitions
+
+def subsequence_match_ratio(observed_indices, target_indices):
+    """Classic longest-common-subsequence-style check: how much of
+    target_indices appears IN ORDER (not necessarily contiguous - other notes
+    can appear in between) within observed_indices. Returns the fraction of
+    target_indices successfully matched, in [0, 1]. Used to score how much of
+    a raga's pakad (its specific identifying phrase) shows up in what was
+    actually sung, tolerating extra notes/repeats around it rather than
+    requiring an exact contiguous match."""
+    if not target_indices:
+        return 0.0
+    j = 0
+    for note in observed_indices:
+        if j < len(target_indices) and note == target_indices[j]:
+            j += 1
+    return j / len(target_indices)
+
+class SequenceClassifier:
+    """Alternative to RaagaClassifier that scores a nyas (held-note) SEQUENCE
+    against each raga's aroha/avroha/pakad, instead of a flat, order-blind
+    histogram. Combines two signals per raga: (1) what fraction of the
+    observed sequence's own note-to-note transitions are ones this raga's
+    melodic vocabulary actually uses, and (2) how much of the raga's specific
+    pakad phrase shows up as an in-order subsequence of what was sung. Built
+    to address real failures the histogram approach hit in practice this
+    session - sibling ragas sharing a note set (Asavari/Jaunpuri,
+    Marwa/Puriya) and even a same-thaat-adjacent pair (Bhupali/Yaman) tying
+    at the best possible tonic - all cases where note ORDER is the only thing
+    that actually distinguishes the ragas."""
+
+    TRANSITION_WEIGHT = 0.5
+    PAKAD_WEIGHT = 0.5
+
+    def __init__(self, db):
+        self.db = db
+        self._transitions_cache = {name: build_raga_transitions(entry) for name, entry in db.items()}
+
+    def classify(self, nyas_sequence):
+        """nyas_sequence: output of extract_nyas_sequence() - a list of
+        (swara_index, frame_count) tuples. Returns {raga_name: score in [0,1]}
+        for every raga in the database (NOT min-max normalized like
+        RaagaClassifier.classify() - these are absolute, comparable-across-
+        calls scores, so a weak match against every raga looks weak in every
+        raga's score, rather than one of them being inflated to 100%)."""
+        observed_indices = [s for s, _ in nyas_sequence]
+        scores = {}
+        for name, entry in self.db.items():
+            if len(observed_indices) < 2:
+                scores[name] = 0.0
+                continue
+            transitions = self._transitions_cache[name]
+            observed_transitions = [(observed_indices[i], observed_indices[i + 1])
+                                     for i in range(len(observed_indices) - 1)]
+            transition_score = (sum(1 for t in observed_transitions if t in transitions) / len(observed_transitions)
+                                 if observed_transitions else 0.0)
+            pakad_indices = _raga_sequence_to_indices(entry, 'pakad')
+            pakad_score = subsequence_match_ratio(observed_indices, pakad_indices)
+            scores[name] = self.TRANSITION_WEIGHT * transition_score + self.PAKAD_WEIGHT * pakad_score
+        return scores
+
 DRONE_FOURTH_SEMITONE = 5   # Ma_shuddha - Sa-Ma drone dyad
 DRONE_FIFTH_SEMITONE = 7    # Pa - Sa-Pa drone dyad, more common Hindustani tuning
 DRONE_FOURTH_WEIGHT = 0.5

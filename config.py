@@ -244,7 +244,7 @@ RAAGA_DATABASE = {
 
     'Jaunpuri': {
         'that': 'Asavari',
-        'aroha': ['Sa', 'Re_shuddha', 'Ga_komal', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Sa'],
+        'aroha': ['Sa', 'Re_shuddha', 'Ma_shuddha', 'Pa', 'Dha_komal', 'Ni_komal', 'Sa'],
         'avroha': ['Sa', 'Ni_komal', 'Dha_komal', 'Pa', 'Ma_shuddha', 'Ga_komal', 'Re_shuddha', 'Sa'],
         'vadi': 'Dha_komal',
         'samvadi': 'Ga_komal',
