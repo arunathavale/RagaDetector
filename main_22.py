@@ -406,7 +406,18 @@ def build_raga_transitions(entry):
     moves are actually part of this raga's melodic vocabulary. Used to score
     how consistent an OBSERVED sequence's own transitions are with a
     candidate raga, the way a flat histogram never can (it has no concept of
-    "this note followed that one")."""
+    "this note followed that one").
+
+    A row-normalized transition PROBABILITY matrix (matching Bhattacharjee &
+    Sriniwasan 2011's technique - see PROJECT_PLAN.md's 2026-07-11 literature-
+    check entry) was tried in place of this binary set, on the theory that a
+    raga's DOMINANT move from a note should count for more than a move it
+    merely can make occasionally - exactly the nuance needed for Asavari/
+    Jaunpuri's aroha, which share 4 of 5 transitions. Measured WORSE on
+    eval_sequence_harness.py (72.0% vs. this binary version's 83.1%), and
+    Laplace smoothing to address suspected sparse-data overconfidence made it
+    worse still (68.8%) - reverted rather than kept on the strength of the
+    literature reference alone without evidence it actually helps here."""
     transitions = set()
     for key in ('aroha', 'avroha', 'pakad'):
         indices = _raga_sequence_to_indices(entry, key)
@@ -433,15 +444,26 @@ def subsequence_match_ratio(observed_indices, target_indices):
 class SequenceClassifier:
     """Alternative to RaagaClassifier that scores a nyas (held-note) SEQUENCE
     against each raga's aroha/avroha/pakad, instead of a flat, order-blind
-    histogram. Combines two signals per raga: (1) what fraction of the
-    observed sequence's own note-to-note transitions are ones this raga's
-    melodic vocabulary actually uses, and (2) how much of the raga's specific
-    pakad phrase shows up as an in-order subsequence of what was sung. Built
-    to address real failures the histogram approach hit in practice this
-    session - sibling ragas sharing a note set (Asavari/Jaunpuri,
-    Marwa/Puriya) and even a same-thaat-adjacent pair (Bhupali/Yaman) tying
-    at the best possible tonic - all cases where note ORDER is the only thing
-    that actually distinguishes the ragas."""
+    histogram. Combines two signals per raga: (1) a duration-weighted fraction
+    of the observed sequence's own note-to-note transitions that are in this
+    raga's melodic vocabulary (see build_raga_transitions()), and (2) how much
+    of the raga's specific pakad phrase shows up as an in-order subsequence of
+    what was sung. Built to address real failures the histogram approach hit
+    in practice this session - sibling ragas sharing a note set (Asavari/
+    Jaunpuri, Marwa/Puriya) and even a same-thaat-adjacent pair (Bhupali/
+    Yaman) tying at the best possible tonic - all cases where note ORDER is
+    the only thing that actually distinguishes the ragas.
+
+    Duration weighting (each transition's contribution is proportional to how
+    long its two notes were held, in nyas frame_count) was motivated by a
+    finding in Koduri/Gulati/Rao's 2011 survey (see PROJECT_PLAN.md):
+    weighting swara occurrence by total held duration, not just instance
+    count, gave their best accuracy - a longer-held note is a more confident
+    signal than one that barely cleared MIN_NYAS_FRAMES. Measured neutral on
+    eval_sequence_harness.py (83.1% either way - that synthetic benchmark
+    uses fairly uniform note durations, so there's little real variation for
+    this to exploit), kept anyway since it's free on this data and plausibly
+    matters more on real audio where singers genuinely linger unevenly."""
 
     TRANSITION_WEIGHT = 0.5
     PAKAD_WEIGHT = 0.5
@@ -457,19 +479,25 @@ class SequenceClassifier:
         RaagaClassifier.classify() - these are absolute, comparable-across-
         calls scores, so a weak match against every raga looks weak in every
         raga's score, rather than one of them being inflated to 100%)."""
-        observed_indices = [s for s, _ in nyas_sequence]
         scores = {}
         for name, entry in self.db.items():
-            if len(observed_indices) < 2:
+            if len(nyas_sequence) < 2:
                 scores[name] = 0.0
                 continue
             transitions = self._transitions_cache[name]
-            observed_transitions = [(observed_indices[i], observed_indices[i + 1])
-                                     for i in range(len(observed_indices) - 1)]
-            transition_score = (sum(1 for t in observed_transitions if t in transitions) / len(observed_transitions)
-                                 if observed_transitions else 0.0)
+            weighted_hit_sum, total_weight = 0.0, 0.0
+            for i in range(len(nyas_sequence) - 1):
+                from_swara, from_duration = nyas_sequence[i]
+                to_swara, to_duration = nyas_sequence[i + 1]
+                weight = from_duration + to_duration
+                weighted_hit_sum += weight * (1.0 if (from_swara, to_swara) in transitions else 0.0)
+                total_weight += weight
+            transition_score = weighted_hit_sum / total_weight if total_weight > 0 else 0.0
+
+            observed_indices = [s for s, _ in nyas_sequence]
             pakad_indices = _raga_sequence_to_indices(entry, 'pakad')
             pakad_score = subsequence_match_ratio(observed_indices, pakad_indices)
+
             scores[name] = self.TRANSITION_WEIGHT * transition_score + self.PAKAD_WEIGHT * pakad_score
         return scores
 

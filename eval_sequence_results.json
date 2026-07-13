@@ -33,7 +33,7 @@
     "trial": 0,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.4667
+    "confidence": 0.4648
   },
   {
     "raga": "Yaman",
@@ -42,7 +42,7 @@
     "trial": 1,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.4667
+    "confidence": 0.4648
   },
   {
     "raga": "Yaman",
@@ -114,7 +114,7 @@
     "trial": 0,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.425
+    "confidence": 0.4219
   },
   {
     "raga": "Yaman",
@@ -168,7 +168,7 @@
     "trial": 0,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.5
+    "confidence": 0.4973
   },
   {
     "raga": "Yaman",
@@ -195,7 +195,7 @@
     "trial": 0,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.5833
+    "confidence": 0.5797
   },
   {
     "raga": "Yaman",
@@ -240,7 +240,7 @@
     "trial": 2,
     "predicted": "Yaman",
     "correct": true,
-    "confidence": 0.6071
+    "confidence": 0.6038
   },
   {
     "raga": "Bhupali",
@@ -321,7 +321,7 @@
     "trial": 2,
     "predicted": "Bhupali",
     "correct": true,
-    "confidence": 0.4861
+    "confidence": 0.483
   },
   {
     "raga": "Bhupali",
@@ -447,7 +447,7 @@
     "trial": 1,
     "predicted": "Bhupali",
     "correct": true,
-    "confidence": 0.8175
+    "confidence": 0.8154
   },
   {
     "raga": "Bhupali",
@@ -465,7 +465,7 @@
     "trial": 0,
     "predicted": "Bhupali",
     "correct": true,
-    "confidence": 0.8175
+    "confidence": 0.8154
   },
   {
     "raga": "Bhupali",
@@ -474,7 +474,7 @@
     "trial": 1,
     "predicted": "Bhupali",
     "correct": true,
-    "confidence": 0.5556
+    "confidence": 0.5537
   },
   {
     "raga": "Bhupali",
@@ -483,7 +483,7 @@
     "trial": 2,
     "predicted": "Bhupali",
     "correct": true,
-    "confidence": 0.5222
+    "confidence": 0.5202
   },
   {
     "raga": "Bhairav",
@@ -501,7 +501,7 @@
     "trial": 1,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.4697
+    "confidence": 0.4643
   },
   {
     "raga": "Bhairav",
@@ -519,7 +519,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.4364
+    "confidence": 0.4312
   },
   {
     "raga": "Bhairav",
@@ -537,7 +537,7 @@
     "trial": 2,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6439
+    "confidence": 0.6421
   },
   {
     "raga": "Bhairav",
@@ -546,7 +546,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6439
+    "confidence": 0.6421
   },
   {
     "raga": "Bhairav",
@@ -564,7 +564,7 @@
     "trial": 2,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6439
+    "confidence": 0.6421
   },
   {
     "raga": "Bhairav",
@@ -654,7 +654,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.5606
+    "confidence": 0.5597
   },
   {
     "raga": "Bhairav",
@@ -681,7 +681,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.7172
+    "confidence": 0.7176
   },
   {
     "raga": "Bhairav",
@@ -690,7 +690,7 @@
     "trial": 1,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.7172
+    "confidence": 0.7157
   },
   {
     "raga": "Bhairav",
@@ -708,7 +708,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6023
+    "confidence": 0.5972
   },
   {
     "raga": "Bhairav",
@@ -717,7 +717,7 @@
     "trial": 1,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6023
+    "confidence": 0.6007
   },
   {
     "raga": "Bhairav",
@@ -726,7 +726,7 @@
     "trial": 2,
     "predicted": "Bhairav",
     "correct": true,
-    "confidence": 0.6023
+    "confidence": 0.5992
   },
   {
     "raga": "Asavari",
@@ -762,7 +762,7 @@
     "trial": 0,
     "predicted": "Asavari",
     "correct": true,
-    "confidence": 0.475
+    "confidence": 0.473
   },
   {
     "raga": "Asavari",
@@ -843,7 +843,7 @@
     "trial": 0,
     "predicted": "Jaunpuri",
     "correct": false,
-    "confidence": 0.4464
+    "confidence": 0.4433
   },
   {
     "raga": "Asavari",
@@ -861,7 +861,7 @@
     "trial": 2,
     "predicted": "Jaunpuri",
     "correct": false,
-    "confidence": 0.3714
+    "confidence": 0.3708
   },
   {
     "raga": "Asavari",
@@ -870,7 +870,7 @@
     "trial": 0,
     "predicted": "Jaunpuri",
     "correct": false,
-    "confidence": 0.4881
+    "confidence": 0.484
   },
   {
     "raga": "Asavari",
@@ -906,7 +906,7 @@
     "trial": 1,
     "predicted": "Jaunpuri",
     "correct": false,
-    "confidence": 0.5714
+    "confidence": 0.5697
   },
   {
     "raga": "Asavari",
@@ -942,7 +942,7 @@
     "trial": 2,
     "predicted": "Asavari",
     "correct": true,
-    "confidence": 0.7375
+    "confidence": 0.736
   },
   {
     "raga": "Asavari",
@@ -960,7 +960,7 @@
     "trial": 1,
     "predicted": "Asavari",
     "correct": true,
-    "confidence": 0.7875
+    "confidence": 0.786
   },
   {
     "raga": "Asavari",
@@ -978,7 +978,7 @@
     "trial": 0,
     "predicted": "Asavari",
     "correct": false,
-    "confidence": 0.4
+    "confidence": 0.3993
   },
   {
     "raga": "Jaunpuri",
@@ -1005,7 +1005,7 @@
     "trial": 0,
     "predicted": "Asavari",
     "correct": false,
-    "confidence": 0.4
+    "confidence": 0.3993
   },
   {
     "raga": "Jaunpuri",
@@ -1041,7 +1041,7 @@
     "trial": 1,
     "predicted": "Asavari",
     "correct": false,
-    "confidence": 0.4
+    "confidence": 0.3993
   },
   {
     "raga": "Jaunpuri",
@@ -1113,7 +1113,7 @@
     "trial": 0,
     "predicted": "Jaunpuri",
     "correct": true,
-    "confidence": 0.4881
+    "confidence": 0.4863
   },
   {
     "raga": "Jaunpuri",
@@ -1131,7 +1131,7 @@
     "trial": 2,
     "predicted": "Jaunpuri",
     "correct": true,
-    "confidence": 0.4881
+    "confidence": 0.4863
   },
   {
     "raga": "Jaunpuri",
@@ -1140,7 +1140,7 @@
     "trial": 0,
     "predicted": "Jaunpuri",
     "correct": true,
-    "confidence": 0.6607
+    "confidence": 0.6587
   },
   {
     "raga": "Jaunpuri",
@@ -1203,7 +1203,7 @@
     "trial": 1,
     "predicted": "Jaunpuri",
     "correct": true,
-    "confidence": 0.7571
+    "confidence": 0.7552
   },
   {
     "raga": "Jaunpuri",
@@ -1212,7 +1212,7 @@
     "trial": 2,
     "predicted": "Jaunpuri",
     "correct": true,
-    "confidence": 0.6857
+    "confidence": 0.6837
   },
   {
     "raga": "Marwa",
@@ -1275,7 +1275,7 @@
     "trial": 0,
     "predicted": "Bhairav",
     "correct": false,
-    "confidence": 0.4364
+    "confidence": 0.4357
   },
   {
     "raga": "Marwa",
@@ -1365,7 +1365,7 @@
     "trial": 1,
     "predicted": "Marwa",
     "correct": true,
-    "confidence": 0.65
+    "confidence": 0.6507
   },
   {
     "raga": "Marwa",
@@ -1500,7 +1500,7 @@
     "trial": 1,
     "predicted": "Puriya",
     "correct": true,
-    "confidence": 0.9
+    "confidence": 0.898
   },
   {
     "raga": "Puriya",
@@ -1581,7 +1581,7 @@
     "trial": 1,
     "predicted": "Marwa",
     "correct": false,
-    "confidence": 0.425
+    "confidence": 0.4243
   },
   {
     "raga": "Puriya",
@@ -1608,7 +1608,7 @@
     "trial": 1,
     "predicted": "Marwa",
     "correct": false,
-    "confidence": 0.5417
+    "confidence": 0.5398
   },
   {
     "raga": "Puriya",
@@ -1617,7 +1617,7 @@
     "trial": 2,
     "predicted": "Marwa",
     "correct": false,
-    "confidence": 0.5417
+    "confidence": 0.5398
   },
   {
     "raga": "Puriya",
