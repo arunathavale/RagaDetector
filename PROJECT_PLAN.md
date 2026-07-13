@@ -1,12 +1,14 @@
 # RagaDetector — Project Plan
 
-Last updated: 2026-07-08
+Last updated: 2026-07-11
 
 This file is meant to be the anchor document for this project — read it at the start of any Claude Code session (alongside `CLAUDE.md`) before making changes, and update it as milestones are hit or the plan changes.
 
 ## 1. What this project is
 
 A CPU-only Hindustani classical Raaga identifier. It listens to live microphone audio or a dropped-in music file (Phase 5, 2026-07-08), extracts pitch, builds a tonic-relative 120-bin pitch-class histogram, and compares it against reference Raaga templates via cosine similarity to guess which Raaga is being performed.
+
+**Goal, redefined 2026-07-11:** identify the Raaga being performed - but for Raagas that are genuinely, musicologically close (sharing a thaat/note set, e.g. Asavari/Jaunpuri, Marwa/Puriya), a confident either/or answer naming both candidate Raagas counts as success, not failure. These known-ambiguous pairs must be reported clearly and explicitly when they occur ("Asavari or Jaunpuri - these are very similar and hard to fully distinguish"), never silently resolved to a single guess that's wrong roughly half the time. Arun's reasoning: this project's eventual Phase 7 (practice/learning-mode feedback for music students) can only be built responsibly on a classifier that is honest about genuine ambiguity - confidently wrong feedback to a learner is worse than no feedback, so knowing when NOT to commit to a single answer is as important as accuracy itself. Re-scoring the existing eval harnesses under this redefined metric the same night it was proposed showed the histogram approach (`RaagaClassifier`) already reaches 100.0% on the synthetic aroha/avroha/pakad benchmark (up from 95.2% strict) - every one of its remaining synthetic errors was a same-thaat sibling swap, not a genuine cross-family miss. This does NOT extend to real-audio failures found the same night (Kaushiki Chakraborty's Yaman, `bhoop03.wav`, two Bhairav files under `SequenceClassifier`) - none of those were sibling-pair confusions, so this redefinition doesn't paper over them; real-audio robustness remains a separate, unresolved problem. See PROJECT_PLAN.md's 2026-07-11 entries for the full investigation.
 
 ## 2. Where things actually stand today
 
