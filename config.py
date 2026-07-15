@@ -176,7 +176,7 @@ RAAGA_DATABASE = {
         'avroha': ['Sa', 'Ni_shuddha', 'Dha_shuddha', 'Pa', 'Ma_tivra', 'Ga_shuddha', 'Re_shuddha', 'Sa'],
         'vadi': 'Ga_shuddha',
         'samvadi': 'Ni_shuddha',
-        'pakad': ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha', 'Re_shuddha', 'Sa', 'Pa', 'Ma_tivra', 
+        'pakad': ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha', 'Re_shuddha', 'Sa', 'Pa', 'Ma_tivra',
                   'Ga_shuddha', 'Re_shuddha', 'Sa'],
         'prahar': 'evening (first quarter)',
         'forbidden_notes': [],  # Yaman uses all 7 notes, no forbidden notes
@@ -185,6 +185,32 @@ RAAGA_DATABASE = {
             ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha'],
             ['Ma_tivra', 'Pa', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
             ['Re_shuddha', 'Ga_shuddha', 'Ma_tivra', 'Dha_shuddha', 'Ni_shuddha', 'Sa']
+        ]
+    },
+    'Yaman Kalyan': {
+        # Added 2026-07-14 after repeatedly finding real recordings labeled
+        # "Yaman" (Kaushiki Chakraborty, Ashwini Bhide) were actually this raga -
+        # Arun's description: "the movement of this raga is like Yaman, except
+        # that in the descent, it gently touches the flat madhyam using the GmG
+        # (Ga-Ma_shuddha-Ga) pattern occasionally." Everything below is inferred
+        # from that one detail plus Yaman's own entry, not independently sourced -
+        # flag anything that looks musicologically off, especially vadi/samvadi
+        # and the exact pakad, which weren't specified.
+        'that': 'Kalyan',
+        'aroha': ['Sa', 'Re_shuddha', 'Ga_shuddha', 'Ma_tivra', 'Pa', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
+        'avroha': ['Sa', 'Ni_shuddha', 'Dha_shuddha', 'Pa', 'Ma_tivra', 'Ga_shuddha', 'Ma_shuddha',
+                   'Ga_shuddha', 'Re_shuddha', 'Sa'],
+        'vadi': 'Ga_shuddha',
+        'samvadi': 'Ni_shuddha',
+        'pakad': ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha', 'Ma_shuddha', 'Ga_shuddha', 'Re_shuddha', 'Sa',
+                  'Pa', 'Ma_tivra', 'Ga_shuddha', 'Re_shuddha', 'Sa'],
+        'prahar': 'evening (first quarter)',
+        'forbidden_notes': [],
+        'required_notes': ['Sa', 'Re_shuddha', 'Ga_shuddha', 'Ma_tivra', 'Ma_shuddha', 'Pa', 'Dha_shuddha', 'Ni_shuddha'],
+        'characteristic_phrases': [
+            ['Ni_shuddha', 'Re_shuddha', 'Ga_shuddha'],
+            ['Ma_tivra', 'Pa', 'Dha_shuddha', 'Ni_shuddha', 'Sa'],
+            ['Ga_shuddha', 'Ma_shuddha', 'Ga_shuddha']
         ]
     },
     

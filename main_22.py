@@ -43,7 +43,7 @@ LONG_SWARA_NAMES = [name for name, _ in sorted(SWARA_MAPPING.items(), key=lambda
 RAGA_REGISTRY = RAAGA_DATABASE
 
 RAGA_SYNONYMS = {"marva": "Marwa", "bhoop": "Bhupali", "bhoopali": "Bhupali", "bhairv": "Bhairav",
-                  "asawari": "Asavari"}
+                  "asawari": "Asavari", "yamankalyan": "Yaman Kalyan", "yaman kalyan": "Yaman Kalyan"}
 
 TONIC_DETECTION_SECONDS = 5.0
 FALLBACK_TONIC_HZ = 145.0
