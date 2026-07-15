@@ -8,7 +8,12 @@ import numpy as np
 # =============================================================================
 # AUDIO SETTINGS
 # =============================================================================
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 48000  # matches this Mac's mic default (was 44100, which
+# audio_stream.py had to silently ask macOS to resample down from the
+# device's native 48000Hz on every live session - not guaranteed lossless,
+# and plausibly a real contributor to live-mic-specific pitch-detection noise
+# found 2026-07-14, since file-based analysis (librosa.load(), proper
+# resampling) never showed the same pattern. See PROJECT_PLAN.md.
 BUFFER_SIZE = 1024
 CHANNELS = 1
 AUDIO_DEVICE = None  # None for default device

@@ -684,7 +684,9 @@ def determine_tonic_from_pitches(pitches, search_min_hz=TYPICAL_TONIC_RANGE_HZ[0
         hz *= 2
     return (best_tonic,) + best_components
 
-PYIN_HOP_LENGTH = 441  # ~10ms at 44100Hz
+PYIN_HOP_LENGTH = int(SAMPLE_RATE * 0.01)  # ~10ms, computed from SAMPLE_RATE
+# rather than hardcoded so this stays correct if SAMPLE_RATE ever changes
+# again (it did once already, 44100 -> 48000, see config.py)
 
 def continuous_pyin_pitches(raw_audio, sample_rate=SAMPLE_RATE, hop_length=PYIN_HOP_LENGTH,
                              voiced_prob_threshold=0.5):

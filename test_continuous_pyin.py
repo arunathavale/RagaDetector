@@ -17,7 +17,8 @@ from config import SAMPLE_RATE, HISTOGRAM_BINS, BINS_PER_SEMITONE, RAAGA_DATABAS
 from main_22 import RaagaClassifier, compute_swara_deviation_report, TONIC_DETECTION_SECONDS
 
 CENTS_PER_BIN = 1200.0 / HISTOGRAM_BINS
-HOP_LENGTH = 441  # ~10ms at 44100Hz, matching SWARA_EXTRACTION_SPEC.md's recommendation
+HOP_LENGTH = int(SAMPLE_RATE * 0.01)  # ~10ms, matching SWARA_EXTRACTION_SPEC.md's
+# recommendation - computed from SAMPLE_RATE rather than hardcoded
 
 
 def pitch_to_bin(pitch_hz, tonic_hz):
